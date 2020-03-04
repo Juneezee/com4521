@@ -105,7 +105,7 @@ void multiply(matrixNN r, const matrixNN a, const matrixNN t) {
     // a and t are const so are implicitly shared variables
 #pragma omp parallel for shared(r) private(i, j, k)
     for (i = 0; i < N; i++) {
-        for (j = 0; j < N; j++) {
+        for (j = 0; j < i; j++) {
             matrix_type temp = 0;
             for (k = 0; k < N; k++) {
                 temp += a[i][k] * t[j][k];
