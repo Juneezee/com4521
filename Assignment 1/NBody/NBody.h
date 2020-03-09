@@ -6,12 +6,10 @@
 #define dt          0.01f   // time step
 #define SOFTENING   2.0f    // softening parameter to help with numerical instability
 
-struct nbody {
+typedef struct nbody {
     float x, y, vx, vy, m;
-};
+} nbody;
 
 typedef enum MODE { CPU, OPENMP, CUDA } MODE;
-
-typedef struct nbody nbody;
 
 #endif	//__NBODY_HEADER__
