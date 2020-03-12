@@ -19,12 +19,16 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="nbody_args.h" />
+    <ClInclude Include="nbody_data.h" />
     <ClInclude Include="NBody.h" />
     <ClInclude Include="NBodyVisualiser.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="NBody.c" />
     <ClCompile Include="NBodyVisualiser.c" />
+    <ClCompile Include="nbody_args.c" />
+    <ClCompile Include="nbody_data.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8C929951-023F-420A-88BA-BCD331DAB177}</ProjectGuid>

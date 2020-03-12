@@ -593,6 +593,8 @@ void handleKeyboardDefault(unsigned char key, int x, int y) {
         case 'd': //d key
             display_density = !display_density;
             break;
+        default:
+            break;
     }
 }
 
