@@ -20,9 +20,9 @@ extern char *input_file;
 static void generate_random_data(nbody *);
 static void read_input_file(nbody *);
 static int read_line(FILE *, char[]);
-static char *tokenise(char *);
 static void validate_commas(char[]);
 static void parse_initial_values(nbody *, char[]);
+static char *tokenise(char *);
 
 /**
  * Depending on program arguments, either generate random data

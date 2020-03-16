@@ -44,13 +44,18 @@ void parse_argv(int argc, char *argv[]) {
         fprintf(stderr, "error: not enough arguments\n");
         print_help();
         exit(EXIT_FAILURE);
-    };;
+    }
 
     // N and D must be larger than 1
     N = str_to_u_int(argv[1]);
     D = str_to_u_int(argv[2]);
     if (N == 0 || D == 0) {
         fprintf(stderr, "error: N and D must be larger than 0");
+        exit(EXIT_FAILURE);
+    }
+    // Arithmetic overflow will occur when doing (int)(D * D) in `step` function
+    if (D >= 46341) {
+        fprintf(stderr, "error: overflow will occur if D is too large, try 0 < D < 46341");
         exit(EXIT_FAILURE);
     }
 
@@ -102,17 +107,17 @@ static unsigned int str_to_u_int(char *str) {
 
     char *end_ptr;
 
-    // Need to read as signed to check for negative inputs
-    const long long res = strtoll(str, &end_ptr, 10);
+    const unsigned long res = strtoul(str, &end_ptr, 10);
 
     // Case: any trailing characters that are not part of the number
     if (*end_ptr != '\0') {
-        fprintf(stderr, "error: integer not convertible: %s\n", str);
+        fprintf(stderr, "error: not convertible to integer: %s\n", str);
         exit(EXIT_FAILURE);
     }
 
-    // Case: overflow of unsigned int
-    if (res < 0 || res > UINT_MAX || errno == ERANGE) {
+    // res > INT_MAX because OpenMP 2.0 requires `int` for loop counter,
+    // so N, D, I need to be explicitly cast to `int`, e.g. i < (int)N
+    if (res > INT_MAX || errno == ERANGE) {
         fprintf(stderr, "error: integer overflow: %s\n", str);
         exit(EXIT_FAILURE);
     }

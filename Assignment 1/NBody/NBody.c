@@ -1,13 +1,17 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdlib.h>
 #include <stdio.h>
-#include <time.h>
 #include <math.h>
+#include <omp.h>
 
 #include "NBody.h"
 #include "NBodyVisualiser.h"
 #include "nbody_args.h"
 #include "nbody_data.h"
+
+// Optimisation: function macros
+#define MAGNITUDE(x, y) ((float)sqrtf((x) * (x) + (y) * (y))
+#define SOFTENING_FUNC(mag) (powf((mag) * (mag) + SOFTENING * SOFTENING, 1.5f))
 
 // External variables defined in `nbody_args`
 extern unsigned int N;
@@ -40,15 +44,6 @@ int main(const int argc, char *argv[]) {
     // Initialise N-bodies data
     initialise_data(nbodies);
 
-    /*for (unsigned int i = 0; i < N; i++) {
-        printf("N_Body: %d\n", i);
-        printf("x: %f\n", nbodies[i].x);
-        printf("y: %f\n", nbodies[i].y);
-        printf("vx: %f\n", nbodies[i].vx);
-        printf("vy: %f\n", nbodies[i].vy);
-        printf("m: %f\n\n", nbodies[i].m);
-    }*/
-
     if (I == 0) {
         // Start the visualiser
         initViewer(N, D, M, &step);
@@ -57,18 +52,18 @@ int main(const int argc, char *argv[]) {
         startVisualisationLoop();
     } else {
         // Perform a fixed number of simulation steps, then output the timing results
-        const clock_t start = clock();
+        const double start = omp_get_wtime();
 
         for (unsigned int i = 0; i < I; i++) {
-            //
+            step();
         }
 
-        const clock_t end = clock();
+        const double end = omp_get_wtime();
 
-        const float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-        const float milliseconds = (seconds - floorf(seconds)) * 1000;
+        const double seconds = end - start;
+        const int milliseconds = (int)((seconds - (int)seconds) * 1000);
 
-        printf("Execution time: %.0f seconds %.0f milliseconds", seconds, milliseconds);
+        printf("Execution time: %d seconds %d milliseconds", (int)seconds, milliseconds);
     }
 
     // Free memory
@@ -78,10 +73,13 @@ int main(const int argc, char *argv[]) {
     return 0;
 }
 
+/**
+ * Perform the main simulation of the NBody system
+ */
 static void step(void) {
-    // TODO: Perform the main simulation of the NBody system
+    int i;
 
-    for (unsigned int i = 0; i < N; i++) {
+    for (i = 0; i < (int)N; i++) {
         /* Force */
         vector sum = { 0, 0 };
 
@@ -91,10 +89,10 @@ static void step(void) {
                 nbodies[j].y - nbodies[i].y
             };
             const float mag_ij = MAGNITUDE(dist_ij.x, dist_ij.y));
-            const float soft_norm = powf(mag_ij * mag_ij + SOFTENING * SOFTENING, 1.5f);
+            const float m_div_soft = nbodies[j].m / SOFTENING_FUNC(mag_ij);
 
-            sum.x += nbodies[j].m * dist_ij.x / soft_norm;
-            sum.y += nbodies[j].m * dist_ij.y / soft_norm;
+            sum.x += m_div_soft * dist_ij.x;
+            sum.y += m_div_soft * dist_ij.y;
         }
 
         const float GM = G * nbodies[i].m;
@@ -106,20 +104,25 @@ static void step(void) {
         nbodies[i].y += dt * nbodies[i].vy;
 
         // Calculate velocity vector, acceleration is also computed here
-        const float dt_m = dt / nbodies[i].m;
-        nbodies[i].vx += dt_m * force.x;
-        nbodies[i].vy += dt_m * force.y;
+        const float dt_div_m = dt / nbodies[i].m;
+        nbodies[i].vx += dt_div_m * force.x;
+        nbodies[i].vy += dt_div_m * force.y;
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
-        const int col = (int)(nbodies[i].x * (float)D);
-        const int row = (int)(nbodies[i].y * (float)D);
-        const int cell = (int)(D * row + col);
-        activity_map[cell] += 1.0f;
+        const unsigned int col = (unsigned int)(nbodies[i].x * (float)D);
+        const unsigned int row = (unsigned int)(nbodies[i].y * (float)D);
+
+        // Do not update `activity_map` if n-body is out of bounds
+        if (col <= D && row <= D) {
+            activity_map[D * row + col] += 1;
+        }
     }
 
     /* Loop through the `activity_map` to normalise the body counts */
-    for (unsigned int i = 0, n = D * D; i < n; i++) {
+    const int n = (int)(D * D);
+#pragma omp parallel for shared(n, activity_map, D, N) if (M == OPENMP)
+    for (i = 0; i < n; i++) {
         activity_map[i] *= (float)D / (float)N;
     }
 }
