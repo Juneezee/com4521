@@ -18,10 +18,4 @@ typedef struct vector {
 
 typedef enum MODE { CPU, OPENMP, CUDA } MODE;
 
-// Optimisation: inlining `magnitude` function
-#define MAGNITUDE(x, y) ((float)sqrtf((x) * (x) + (y) * (y))
-
-// Function declarations
-vector force(nbody *body, nbody *nbodies);
-
 #endif	//__NBODY_HEADER__
