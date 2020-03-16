@@ -1,0 +1,513 @@
+\documentclass[12pt, a4paper]{article}
+\edef\restoreparindent{\parindent=\the\parindent\relax}
+\usepackage{amsmath}
+\usepackage[UKenglish]{babel}
+\usepackage[bibstyle=ieee, dashed=false, sorting=nty]{biblatex}
+\usepackage[labelfont=bf]{caption}
+\usepackage{colortbl}
+\usepackage{csquotes}
+\usepackage{fancyhdr}
+\usepackage{float}
+\usepackage[top=25mm, right=25mm, bottom=25mm, left=25mm]{geometry}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{listings}
+\usepackage{longtable}
+\usepackage{minted}
+\usepackage{microtype}
+\usepackage{multicol}
+\usepackage{parskip}
+\usepackage{pgfplots, tikz}
+\usepackage{tcolorbox}
+\usepackage{xcolor}
+\usepackage{textcomp} % for trademark, copyright symbol
+
+\restoreparindent
+
+\pagestyle{fancy}
+\fancyhead[L]{COM4521}
+\fancyhead[C]{Assignment: N-body Simulation}
+\fancyhead[R]{Part 1}
+\setlength{\headheight}{15pt}
+
+\usemintedstyle{vs}
+
+\addbibresource{references.bib}
+
+\begin{document}
+
+\section{Pre-Implementation Considerations}
+Several aspects are considered in advance to facilitate the implementation process and to improve
+the overall programming quality.
+
+\subsection{Programming Practices} \label{sec:practices}
+To minimise the risk of programming pitfalls, a set of good practices is adopted. These practices
+are assessed according to their relative importance to the quality. Below is the list of practices
+ordered in descending importance level.
+
+\begin{enumerate}
+  \item \textbf{Robustness:} The program must be able to handle any user input without crashing. If
+  a given input is invalid, the program should return a descriptive error message.
+  \item \textbf{Maintainability:} Follow a consistent coding style and use the self-documenting
+  function and variable names. Refactor the code so that each function is only responsible for one
+  task. Code with good structure and high cohesion will be able to narrow down the range of
+  potential problems in the future.
+  \item \textbf{Computational Resource Efficient:} Perform the minimum amount of computation in a
+  loop if possible. Minimise overhead by reducing the number of function calls in a loop. If the
+  value of a computationally expensive operation will be used multiple times, then store it into a
+  variable.
+  \item \textbf{Documentation:} The code should be well commented. Each function should have a
+  Javadoc style block comment before the function definition. It is preferred to write
+  self-documenting code, however, inline comments should be used when further clarification is
+  required.
+\end{enumerate}
+
+\subsection{Unit Testing}
+Since the program involves user input processing, thus it is required to perform basic unit testing
+to test its correctness and completeness in handling user inputs.
+
+It is impractical to test every possible combination of user inputs. Therefore, each command
+argument will be tested independently with their respective edge cases. Testing the program with
+edge cases is an efficient way to ensure that the problem can handle extreme user inputs.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|c|c|c|c|}
+    \hline \rowcolor[HTML]{D8D8D8}
+    Test Case & Argument & Expected Result & Status \\ \hline
+    & & & \\ \hline
+    \end{tabular}
+  \caption{Documentation format of unit testing.}
+\end{table}
+
+\subsubsection{Limitations}
+Unit testing with edge cases will not catch every error in the program, such as runtime errors or
+system-level errors. It is possible for the program to produce incorrect behaviour while passing all
+the test cases. To mitigate this issue, the number of benchmarking has to be increased to reduce the
+likelihood of unexpected errors.
+
+\section{Preliminary Tasks Implementation}
+This section discusses and compares the various possible techniques for implementing preliminary
+tasks. Justifications are given for any final decision or approach taken.
+
+\subsection{Arguments Processing}
+\subsubsection{Integer Arguments} \label{subsec:args}
+\begin{tcolorbox}
+\textbf{Problem:} The integer arguments (\textbf{N}, \textbf{D}, and \textbf{I}) are saved as
+`string' in \mintinline{c}{char *argv[]}.
+
+\bigskip\textbf{Goal:} Parse and convert the `string' into \mintinline{c}{unsigned int} (the same
+data type used in \mintinline{c}{NBodyVisualiser.c}).
+\end{tcolorbox}
+
+Each input argument \textbf{N}, \textbf{D}, and \textbf{I} can be categorised as follows:
+\begin{enumerate}
+    \item \textbf{Category 1:} Argument is a string (e.g. "abc"). In this case, the program must
+    exit with an error message since the argument is not a valid integer and cannot be converted.
+    \item \textbf{Category 2:} Argument is a negative number. Since the data type will be
+    \mintinline{c}{unsigned int}, the program must exit with an error message.
+    \item \textbf{Category 3:} Argument is zero. For \textbf{N} and \textbf{D}, the value must be
+    larger than 1 so the program will exit with an error message. For \textbf{I}, the program will
+    accept the argument but start in \textbf{visualisation} mode.
+    \item \textbf{Category 4:} Argument is a positive number. In this category, there are two more
+    cases to be considered:
+    \begin{enumerate}
+        \item argument $\leq$ \mintinline{c}{INT_MAX}. The program should accept the argument and
+        produce no error. If the number is very large and the machine has limited computational
+        resources, then the program will either return a memory allocation error (discussed in
+        \hyperref[sec:malloc]{\textbf{Section \ref*{sec:malloc}}}) before the simulation or
+        encounter errors including out-of-memory error, system not responding error, etc. during the
+        simulation.
+        \item argument $>$ \mintinline{c}{INT_MAX}. The is the case where overflow occurs. The
+        program should return an error and exit.
+    \end{enumerate}
+\end{enumerate}
+
+\textcolor{red}{N.B.} Changes are made to the definition of \textbf{Category 4} in second iteration
+of implementation. Refer to \hyperref[subsec:maxd]{\textbf{Section \ref*{subsec:maxd}}} for detailed
+explanation.
+
+Based on the analysis of input categorisation, the problem is now clearly defined and the
+implementation approach can be chosen. The C standard library \mintinline{c}{stdlib.h} provides
+different functions that can convert a string to different integer types. Firstly, the
+implementation has to choose a function with appropriate return type. However, there are several
+return types that are not suitable for the use case, as justified below:
+\begin{enumerate}
+    \item A function with return type of \mintinline{c}{int} is not able to
+    satisfy the conditions in \textbf{Category 4}. Argument inputs that are larger than
+    \mintinline{c}{INT_MAX} will cause overflow of \mintinline{c}{int}.
+
+    \item According to the official Microsoft documentation on storage of basic types
+    \cite{basic_types_storage}, \mintinline{c}{long} has the same storage size as
+    \mintinline{c}{int} (4 bytes). Therefore, it will have the same issue as (1).
+
+    \item Function that returns \mintinline{c}{float}, \mintinline{c}{double}, or
+    \mintinline{c}{long double} are not suitable as they are primarily use for floating point
+    numbers.
+\end{enumerate}
+
+After applying these restrictions, the only functions left for selection are:
+\begin{itemize}
+    \item \mintinline{c}{atoll}: returns \mintinline{c}{long long int}
+    \item \mintinline{c}{strtoll}: returns \mintinline{c}{long long int}
+    \item \mintinline{c}{strtoul}: returns \mintinline{c}{unsigned long int}
+    \item \mintinline{c}{strtoull}: returns \mintinline{c}{unsigned long long int}
+\end{itemize}
+
+\subsubsection*{Conclusion}
+\mintinline{c}{strtoul} is chosen to be the function for integer arguments processing. This is
+because:
+\begin{enumerate}
+    \item Its return type is \mintinline{c}{unsigned long int}, which has the same size and range as
+    \mintinline{c}{unsigned int} \cite{basic_types_storage}. In comparison with a
+    \mintinline{c}{long long} type, it would use less computational resources and hence comply with
+    \textbf{Programming Practice 3}.
+    \item It stops reading the string at the first character it cannot recognize as part of a number
+    \cite{strtoul}. This is helpful for error checking the string.
+\end{enumerate}
+
+
+\subsubsection{Operation Mode (M)}
+There are only two valid enum values for the operation mode: \mintinline{c}{CPU} and
+\mintinline{c}{OPENMP}. The program uses \mintinline{c}{strncmp()} to compare the argument
+\textbf{M} with the strings \mintinline{c}{"CPU"} and \mintinline{c}{"OPENMP"}, and assign the
+operation mode to the corresponding enum value.
+
+The program will return an error message and exit if the argument \textbf{M} is other value.
+
+\subsubsection{Input File}
+The file name is stored into \mintinline{c}{char *} variable and the file content is processed in
+N-body data initialisation stage later.
+
+The program will return an error message if the option \mintinline{bash}{-f} is specified but no
+file name is provided.
+
+\subsection{N-Body Data Initialisation}
+\begin{listing}[ht]
+\begin{minted}[frame=lines, framesep=2mm]{c}
+#define DEFAULT_X ((float)rand() / RAND_MAX)
+#define DEFAULT_Y ((float)rand() / RAND_MAX)
+#define DEFAULT_VX 0
+#define DEFAULT_VY 0
+#define DEFAULT_M (1 / (float)N)
+\end{minted}
+\caption{Default value of each n-body member variable} \label{listing:default}
+\end{listing}
+
+Macros are defined for the default value of each n-body member variable. They will be used for
+generating random data and setting the unspecified variables in an input file.
+
+\subsubsection{Generating Random Data}
+Generating random data is straightforward. The value of each member variable is set to the
+corresponding macro.
+
+\subsubsection{Processing Input File}
+\begin{tcolorbox}
+\textbf{Problem:} The input file contains lines of comma separated values, each representing the
+initial states of an n-body. The input file may also contain comment lines.
+
+\bigskip\textbf{Goal:} Read the input file and process only non-comment lines. Default values should
+be assigned for unspecified variables.
+\end{tcolorbox}
+
+\subsubsection*{Step 1: Reading the lines}
+Each line in the input file can be categorised as follows:
+\begin{enumerate}
+    \item \textbf{Category 1:} The line is a comment line
+    \item \textbf{Category 2:} The line is an empty line
+    \item \textbf{Category 3:} The line do not have the correct number of commas
+    \item \textbf{Category 4:} The line contains 5 values and the correct number of commas
+    \item \textbf{Category 5:} The line contains unspecified values and the correct number of commas
+\end{enumerate}
+
+Lines that belong to either \textbf{Category 4} or \textbf{Category 5} should only be read and
+processed by the program. This is implemented by modifying the \mintinline{c}{readLine()} function
+provided in the solution of Lab 1 Exercise 5, as shown in
+\hyperref[listing:readline]{\textbf{Listing \ref*{listing:readline}}}.
+
+\begin{listing}[ht]
+\begin{minted}[linenos, frame=lines, framesep=2mm, fontsize=\footnotesize]{c}
+    while ((c = (char)getc(f)) != EOF) {
+        // Case 1: ignore any line starting with '#'
+        // Case 2: ignore any blank line
+        if (i == 0 && (c == '#' || c == '\n')) {
+            while (c != '\n') {
+                c = (char)getc(f);
+            }
+        } else {
+            ...
+\end{minted}
+\caption{Code snippet of \mintinline{c}{read_line()} function.} \label{listing:readline}
+\end{listing}
+
+For \textbf{Category 3}, a function is created to ensure that only 4 commas appear in a non-comment
+line. The function will exit the program with an error message if the line does not contain the
+correct number of commas.
+
+\subsubsection*{Step 2: Extracting the Values}
+Now each line will have exactly 4 commas. Some lines will have all 5 values and some of them will
+have unspecified values. Unspecifed values will then be assigned with the default values defined in
+\hyperref[listing:default]{\textbf{Listing \ref*{listing:default}}}. Firstly, the line has to be
+split into a series of tokens using comma as delimiter. Each token can then be converted into
+\mintinline{c}{float} using the functions provided in C standard library.
+
+\subsubsection*{Iteration 1}
+The first attempt to split the line into tokens was using the function \mintinline{c}{strtok} in C
+\mintinline{c}{string.h} library. It is works well when the line is in correct format, and there
+must be a space after each comma. However, in the case where the line has consecutive commas without
+space between them (e.g. \mintinline{c}{0.1f,,0.2f,,}), \mintinline{c}{strtok} would extract the
+second token as \mintinline{c}{0.3f} instead of \mintinline{c}{NULL}.
+
+After further experiments, it is confirmed that \mintinline{c}{strtok} is unable to recognise empty
+tokens. Therefore, a different approach has to be adapted.
+
+\subsubsection*{Iteration 2}
+\begin{listing}[ht]
+\begin{minted}[linenos, frame=lines, framesep=2mm, fontsize=\footnotesize]{c}
+static char *tokenise(char *buffer) {
+    static char *buffer_start = NULL;
+
+    if (buffer != NULL) buffer_start = buffer;
+
+    // see if we have reached the end of the line
+    if (buffer_start == NULL || *buffer_start == '\0') return NULL;
+
+    // return the number of characters that are not delimiters
+    const unsigned int n = strcspn(buffer_start, ",");
+
+    // return token as NULL for consecutive delimiters
+    if (n == 0) {
+        buffer_start += 1;
+        return NULL;
+    }
+
+    // save start of this token
+    char *p = buffer_start;
+
+    // bump past the delimiters
+    buffer_start += n;
+
+    // remove the delimiters
+    if (*buffer_start != '\0') *buffer_start++ = '\0';
+
+    return p;
+}
+\end{minted}
+\caption{Code snippet of \mintinline{c}{tokenise()} function.} \label{listing:tokenise}
+\end{listing}
+
+The new approach attempts to address the problem in \textbf{Iteration 1} by creating a customised
+version of \mintinline{c}{strtok} function (\hyperref[listing:tokenise]{\textbf{Listing
+\ref*{listing:tokenise}}}). The lines of code that allows the \mintinline{c}{tokenise} function to
+recognise empty tokens are line 13 - 16, where the function returns \mintinline{c}{NULL} for
+consecutive delimiters case.
+
+\subsection{Memory Allocation} \label{sec:malloc}
+% use calloc instead of malloc+memset. TODO: prove by benchmark
+
+As mentioned in \hyperref[subsec:args]{\textbf{Section \ref*{subsec:args}}}, memory error might
+occur if the integer arguments \textbf{N} and \textbf{D} are large and the machine does not have the
+sufficient memory. This can be avoided by having a \mintinline{c}{NULL} check on whether the memory
+allocation has succeeded, as shown in \hyperref[listing:malloc]{\textbf{Lisitng
+\ref*{listing:malloc}}}.
+
+\begin{listing}[ht]
+\begin{minted}[linenos, frame=lines, framesep=2mm, fontsize=\footnotesize]{c}
+    nbodies = (nbody *)malloc(sizeof(nbody) * N);
+    if (nbodies == NULL) {
+        fprintf(stderr, "error: failed to allocate memory: nbodies\n");
+        exit(EXIT_FAILURE);
+    }
+
+    activity_map = (float *)calloc(D * D, sizeof(float));
+    if (activity_map == NULL) {
+        fprintf(stderr, "error: failed to allocate memory: activity_map");
+        exit(EXIT_FAILURE);
+    }
+\end{minted}
+\caption{Dynamically allocating memory.} \label{listing:malloc}
+\end{listing}
+
+\subsubsection*{\mintinline{c}{malloc + memset} or \mintinline{c}{calloc} for \mintinline{c}{activity_map}?}
+The variable \mintinline{c}{activity_map} needs to be read before it is assigned a value in the
+\mintinline{c}{step()} function. Therefore, all bytes in the allocated storage must be initialise to
+zero before \mintinline{c}{step()} function is executed. The C library function
+\mintinline{c}{calloc} is suitable for this use case.
+
+Several online sources \cite{malloc_vs_calloc_so, malloc_vs_calloc_blog, why_calloc} have suggested
+that \mintinline{c}{calloc} is faster and uses less memory than \mintinline{c}{malloc + memset},
+although the actual results might vary across different compilers. Since this will not be included
+in the execution time of the simulation, thus it is assumed that the compiler would be able to
+perform the appropriate optimisations.
+
+\subsection{Testing}
+\subsubsection{Number of Bodies (N)}
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|c|c|c|>{\columncolor[HTML]{B7E1CD}}c|}
+  \hline \endfirsthead \rowcolor[HTML]{D8D8D8}
+  Test Case & Argument & Expected Result & Status \\ \hline
+  Negative number & $\textbf{N} = -123$ & Program exits with an error message & Pass \\ \hline
+  Zero & $\textbf{N} = 0$ & Program exits with an error message & Pass \\ \hline
+  Positive number & $\textbf{N} = 123$ & Program starts the simulation & Pass \\ \hline
+  Exceeds \mintinline{c}{UINT_MAX} & $\textbf{N} > \mintinline{c}{UINT_MAX}$ & Program exits with
+  an error message & Pass \\ \hline
+  \caption{Test cases for the argument \textbf{N}.}
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+
+\subsubsection{Activity Grid Dimension (D)}
+\textcolor{red}{N.B.} See \hyperref[subsec:maxd]{\textbf{Section \ref*{subsec:maxd}}} for the
+justification about the test case $\textbf{D} > 46430$.
+
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|c|c|c|>{\columncolor[HTML]{B7E1CD}}c|}
+  \hline \endfirsthead \rowcolor[HTML]{D8D8D8}
+  Test Case & Argument & Expected Result & Status \\ \hline
+  Negative number & $\textbf{D} = -123$ & Program exits with an error message & Pass \\ \hline
+  Zero & $\textbf{D} = 0$ & Program exits with an error message & Pass \\ \hline
+  Positive number & $\textbf{D} = 123$ & Program starts the simulation & Pass \\ \hline
+  Exceeds 46430 & $\textbf{D} > 46430$ & Program exits with an error message & Pass \\ \hline
+  \caption{Test cases for the argument \textbf{D}.}
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+
+\subsubsection{Operation Mode (M)}
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|c|c|c|>{\columncolor[HTML]{B7E1CD}}c|}
+  \hline \endfirsthead \rowcolor[HTML]{D8D8D8}
+  Test Case & Argument & Expected Result & Status \\ \hline
+  CPU mode & $\textbf{M} =$ CPU & Simulation starts starts in CPU mode & Pass \\ \hline
+  OPENMP mode & $\textbf{M} =$ OPENMP & Simulation starts in OPENMP mode & Pass \\ \hline
+  Other inputs & $\textbf{M} = 123,$ abc, ... & Program exits with an error message & Pass \\ \hline
+  \caption{Test cases for the argument \textbf{M}.}
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+
+\subsubsection{Number of Simulation Iterations (-i I)}
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|c|c|c|>{\columncolor[HTML]{B7E1CD}}c|}
+  \hline \endfirsthead \rowcolor[HTML]{D8D8D8}
+  Test Case & Argument & Expected Result & Status \\ \hline
+  Negative number & $\textbf{I} = -123$ & Program exits with an error message & Pass \\ \hline
+  Zero & $\textbf{I} = 0$ & Simulation starts in visualisation mode & Pass \\ \hline
+  Positive number & $\textbf{I} = 123$ & Simulation starts in iteration mode & Pass \\ \hline
+  Exceeds \mintinline{c}{UINT_MAX} & $\textbf{I} > \mintinline{c}{UINT_MAX}$ & Program exits with
+  an error message & Pass \\ \hline
+  \caption{Test cases for the argument \textbf{I}.}
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+
+\subsubsection{Input File (-f F)}
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|c|c|>{\columncolor[HTML]{B7E1CD}}c|}
+  \hline \endfirsthead \rowcolor[HTML]{D8D8D8}
+  Test Case (file) & Expected Result & Status \\ \hline
+  File name exists in system & Program starts to parse the file & Pass \\ \hline
+  File name does not exist in system & Program exits with an error message & Pass \\ \hline
+  \caption{Test cases for the argument \textbf{F}.}t
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{longtable}{|c|c|>{\columncolor[HTML]{B7E1CD}}c|}
+  \hline \endfirsthead \rowcolor[HTML]{D8D8D8}
+  Test Case (line in file) & Expected Result & Status \\ \hline
+  Blank line & Program exits with an error message & Pass \\ \hline
+  Comment line & Program exits with an error message & Pass \\ \hline
+  Non-comment line, incorrect format & Program exits with an error message & Pass \\ \hline
+  Non-comment line, correct format & Values are extracted and stored  & Pass \\ \hline
+  \caption{Test cases for the lines in the input file.}
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+
+\subsection{Changes Introduced in Second Iteration}
+Below is the list of changes introduced during the iterative implementation process.
+
+\subsubsection{Maximum Value of Activity Grid Dimension (D)} \label{subsec:maxd}
+\begin{listing}[ht]
+\begin{minted}[linenos, frame=lines, framesep=2mm, fontsize=\small]{c}
+    /* Loop through the `activity_map` to normalise the body counts */
+    const int n = (int)(D * D);
+#pragma omp parallel for ... if (M == OPENMP)
+    for (i = 0; i < n; i++) {
+        activity_map[i] *= (float)D / (float)N;
+    }
+\end{minted}
+\caption{Code snippet of \mintinline{c}{step()} function.} \label{listing:step}
+\end{listing}
+
+\noindent Two problems were identified in \hyperref[listing:step]{\textbf{Listing
+\ref*{listing:step}}}:
+\begin{enumerate}
+    \item A compile error C3016 was encountered while attempting to parallelise the code. This is
+    due to the index variable in OpenMP \mintinline{c}{for} statement must have signed integral type
+    \cite{c3016}. This can be fixed by changing the type of variable \mintinline{c}{i} and
+    \mintinline{c}{n} to \mintinline{c}{int}.
+    \item In line 2, arithmetic overflow will occur when \mintinline{c}{D} is larger than 46341 as
+    $46341^2 > 2^{31} - 1$. This can be fixed by setting the maximum possible value of \mintinline{c}{D} to
+    46340.
+\end{enumerate}
+
+\textcolor{red}{N.B.} To prevent the compile error C3016 from occurring for argument \textbf{N} and
+\textbf{I}, the maximum possible value for \textbf{N} and \textbf{I} are changed from
+\mintinline{c}{UINT_MAX} to \mintinline{c}{INT_MAX}. (changes are applied to \textbf{Category 4} in
+\hyperref[subsec:args]{\textbf{Section \ref*{subsec:args}}})
+
+\section{Serial Implementation}
+\subsection{Compute Bound Optimisations}
+With the programming practices defined (\hyperref[sec:practices]{\textbf{Section
+\ref*{sec:practices}}}) in mind, the whole implementation process is simplified as good optimisation
+opportunities are more likely to be identified in the first iteration.
+
+\subsubsection{Reduced Arithmetic Operations}
+
+\subsubsection{Reduced Function Calls}
+
+\subsection{Benchmark Configuration}
+To avoid having inconsistency in the benchmark results, all benchmarks are performed under the same
+configuration.
+
+\subsubsection{Hardware Specifications}
+\begin{enumerate}
+    \item Operating system: Windows 10 64-bit
+    \item CPU: Intel\textsuperscript{\textregistered} Core\texttrademark\ i7-7700HQ, 4 cores, 8
+    threads
+    \item RAM: 16GB DDR4-2400MHz
+\end{enumerate}
+
+\subsubsection{Number of Runs per Benchmark}
+\textbf{Definition:} A single benchmark is a set of unique input argument combinations.
+
+\noindent It is unlikely that the result of every same benchmark run is the same. There will be
+minimal execution time difference between each run due to uncontrollable environment variables. This
+can be mitigated by taking the average execution time of multiple benchmark runs to minimise the
+error rate and randomness. Each benchmark result would be more accurate as well when compared to a
+single benchmark run.
+
+\textbf{Conclusion:} It is decided to calculate the average execution time of a single benchmark
+over 10 runs.
+
+\subsection{Benchmark Results}
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\rowcolor[HTML]{D8D8D8}
+N    & Average Execution Time of 10 runs (seconds) \\ \hline
+256  & 0.325403                                    \\
+512  & 1.294606                                    \\
+1024 & 5.187437                                    \\
+2048 & 21.057497                                   \\ \hline
+\end{tabular}
+\end{table}
+
+
+\section{Parallel Implementation}
+
+% omp_set_nested? does it work?
+
+\subsection{Benchmark Results}
+
+\printbibliography
+
+\end{document}
