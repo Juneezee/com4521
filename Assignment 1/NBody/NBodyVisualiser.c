@@ -140,7 +140,6 @@ void startVisualisationLoop() {
 
 void displayLoop(void) {
     unsigned int i;
-    float *dptr;
 
     if (simulate_function == 0) {
         printf("Error: Simulate function has not been defined by calling initViewer(...)\n");
@@ -157,7 +156,7 @@ void displayLoop(void) {
     else {
         //map buffer to positions TBO and copy data to it from user supplied pointer
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, tbo_nbody);
-        dptr = (float *)glMapBuffer(GL_TEXTURE_BUFFER_EXT, GL_WRITE_ONLY); //tbo_nbody buffer
+        float *dptr = (float *)glMapBuffer(GL_TEXTURE_BUFFER_EXT, GL_WRITE_ONLY); //tbo_nbody buffer
         if (dptr == 0) {
             printf("Error: Unable to map nBody Texture Buffer Object\n");
             return;

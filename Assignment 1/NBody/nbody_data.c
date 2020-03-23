@@ -23,6 +23,7 @@ static int read_line(FILE *, char[]);
 static void validate_commas(char[]);
 static void parse_initial_values(nbody *, char[]);
 static char *tokenise(char *);
+static float str_to_float(const char *);
 
 /**
  * Depending on program arguments, either generate random data
@@ -44,7 +45,7 @@ void initialise_data(nbody *nbodies) {
  * @param nbodies A pointer to an N-body structure
  */
 static void generate_random_data(nbody *nbodies) {
-    for (unsigned int i = 0; i < N; i++) {
+    for (unsigned int i = 0; i < N; ++i) {
         nbodies[i].x = DEFAULT_X;
         nbodies[i].y = DEFAULT_Y;
         nbodies[i].vx = DEFAULT_VX;
@@ -71,16 +72,18 @@ static void read_input_file(nbody *nbodies) {
     unsigned int nbody_count = 0;
 
     while (read_line(f, buffer)) {
-        validate_commas(buffer);
+        if (nbody_count < N) {
+            validate_commas(buffer);
+            parse_initial_values(&nbodies[nbody_count], buffer);
+        }
 
-        parse_initial_values(&nbodies[nbody_count], buffer);
-        nbody_count++;
+        ++nbody_count;
     }
 
     fclose(f);
 
     // Throw error is N supplied != number of bodies in the input file
-    if (N != nbody_count) {
+    if (nbody_count != N) {
         fprintf(stderr,
             "error: argument N (%u) != the number of bodies in the input file (%u)",
             N, nbody_count);
@@ -135,8 +138,8 @@ static int read_line(FILE *f, char buffer[]) {
 static void validate_commas(char buffer[]) {
     unsigned int comma_count = 0;
 
-    for (unsigned int i = 0; buffer[i]; i++) {
-        if (buffer[i] == ',') comma_count++;
+    for (unsigned int i = 0; buffer[i]; ++i) {
+        if (buffer[i] == ',') ++comma_count;
     }
 
     if (comma_count != 4) {
@@ -160,11 +163,11 @@ static void parse_initial_values(nbody *nb, char buffer[]) {
     const char *vy_token = tokenise(NULL);
     const char *m_token = tokenise(NULL);
 
-    nb->x = x_token == NULL ? DEFAULT_X : strtof(x_token, NULL);
-    nb->y = y_token == NULL ? DEFAULT_Y : strtof(y_token, NULL);
-    nb->vx = vx_token == NULL ? DEFAULT_VX : strtof(vx_token, NULL);
-    nb->vy = vy_token == NULL ? DEFAULT_VY : strtof(vy_token, NULL);
-    nb->m = m_token == NULL ? DEFAULT_M : strtof(m_token, NULL);
+    nb->x = x_token == NULL ? DEFAULT_X : str_to_float(x_token);
+    nb->y = y_token == NULL ? DEFAULT_Y : str_to_float(y_token);
+    nb->vx = vx_token == NULL ? DEFAULT_VX : str_to_float(vx_token);
+    nb->vy = vy_token == NULL ? DEFAULT_VY : str_to_float(vy_token);
+    nb->m = m_token == NULL ? DEFAULT_M : str_to_float(m_token);
 }
 
 /**
@@ -200,4 +203,30 @@ static char *tokenise(char *buffer) {
     if (*buffer_start != '\0') *buffer_start++ = '\0';
 
     return p;
+}
+
+/**
+ * Convert tokenised string into float,
+ * including validation for overflow and invalid tokens
+ *
+ * @param token The tokenised string
+ * @return res The converted float
+ */
+static float str_to_float(const char *token) {
+    char *end_ptr;
+    const float res = strtof(token, &end_ptr);
+
+    /* Case: any trailing characters that are not part of a float.
+     *       e.g. accepts 0.6f, but not a single 'f' */
+    if (*end_ptr != '\0' && !(strlen(token) > 1 && strlen(end_ptr) == 1 && end_ptr[0] == 'f')) {
+        fprintf(stderr, "error: not convertible to float: %s\n", token);
+        exit(EXIT_FAILURE);
+    }
+
+    if (errno == ERANGE) {
+        fprintf(stderr, "error: float overflow: %s\n", token);
+        exit(EXIT_FAILURE);
+    }
+
+    return res;
 }
