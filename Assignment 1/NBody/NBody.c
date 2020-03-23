@@ -9,10 +9,6 @@
 #include "nbody_args.h"
 #include "nbody_data.h"
 
-// Optimisation: function macros
-#define MAGNITUDE(x, y) ((float)sqrtf((x) * (x) + (y) * (y))
-#define SOFTENING_FUNC(mag) (powf((mag) * (mag) + SOFTENING * SOFTENING, 1.5f))
-
 // External variables defined in `nbody_args`
 extern unsigned int N;
 extern unsigned int D;
@@ -54,7 +50,7 @@ int main(const int argc, char *argv[]) {
         // Perform a fixed number of simulation steps, then output the timing results
         const double start = omp_get_wtime();
 
-        for (unsigned int i = 0; i < I; i++) {
+        for (unsigned i = 0; i < I; ++i) {
             step();
         }
 
@@ -63,7 +59,7 @@ int main(const int argc, char *argv[]) {
         const double seconds = end - start;
         const int milliseconds = (int)((seconds - (int)seconds) * 1000);
 
-        printf("Execution time: %d seconds %d milliseconds", (int)seconds, milliseconds);
+        printf("Execution time %d seconds %d milliseconds\n", (int)seconds, milliseconds);
     }
 
     // Free memory
@@ -79,51 +75,55 @@ int main(const int argc, char *argv[]) {
 static void step(void) {
     int i;
 
-    for (i = 0; i < (int)N; i++) {
+    // Clear the previous step values
+    const unsigned int grid_size = D * D;
+    memset(activity_map, 0, grid_size * sizeof(float));
+
+#pragma omp parallel for schedule(static) default(none) shared(N, D, nbodies, activity_map) if (M == OPENMP)
+    for (i = 0; i < (int)N; ++i) {
         /* Force */
-        vector sum = { 0, 0 };
+        float sum_x = 0, sum_y = 0;
 
-        for (unsigned int j = 0; j < N; j++) {
-            const vector dist_ij = {
-                nbodies[j].x - nbodies[i].x,
-                nbodies[j].y - nbodies[i].y
-            };
-            const float mag_ij = MAGNITUDE(dist_ij.x, dist_ij.y));
-            const float m_div_soft = nbodies[j].m / SOFTENING_FUNC(mag_ij);
+        for (unsigned int j = 0; j < N; ++j) {
+            const float dist_x = nbodies[j].x - nbodies[i].x;
+            const float dist_y = nbodies[j].y - nbodies[i].y;
+            const float mag_add_soft = dist_x * dist_x + dist_y * dist_y + SOFTENING_SQUARE;
+            const float m_div_soft = nbodies[j].m / (mag_add_soft * sqrtf(mag_add_soft));
 
-            sum.x += m_div_soft * dist_ij.x;
-            sum.y += m_div_soft * dist_ij.y;
+            sum_x += m_div_soft * dist_x;
+            sum_y += m_div_soft * dist_y;
         }
-
-        const float GM = G * nbodies[i].m;
-        const vector force = { sum.x * GM, sum.y * GM };
 
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
         nbodies[i].x += dt * nbodies[i].vx;
         nbodies[i].y += dt * nbodies[i].vy;
 
-        // Calculate velocity vector, acceleration is also computed here
-        const float dt_div_m = dt / nbodies[i].m;
-        nbodies[i].vx += dt_div_m * force.x;
-        nbodies[i].vy += dt_div_m * force.y;
+        // Calculate velocity vector, force and acceleration are computed together
+        nbodies[i].vx += dt * G * sum_x;
+        nbodies[i].vy += dt * G * sum_y;
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
         const unsigned int col = (unsigned int)(nbodies[i].x * (float)D);
         const unsigned int row = (unsigned int)(nbodies[i].y * (float)D);
+        const unsigned int cell = (unsigned int)(D * row + col);
 
-        // Do not update `activity_map` if n-body is out of bounds
-        if (col <= D && row <= D) {
-            activity_map[D * row + col] += 1;
+        // Do not update `activity_map` if n-body is out of grid area
+        if (cell >= 0 && cell < grid_size) {
+            if (M == OPENMP) {
+#pragma omp atomic
+                ++activity_map[cell];
+            } else {
+                ++activity_map[cell];
+            }
         }
     }
 
     /* Loop through the `activity_map` to normalise the body counts */
-    const int n = (int)(D * D);
-#pragma omp parallel for shared(n, activity_map, D, N) if (M == OPENMP)
-    for (i = 0; i < n; i++) {
-        activity_map[i] *= (float)D / (float)N;
+    const float normalise = (float)D / (float)N;
+    for (i = 0; i < (int)grid_size; ++i) {
+        activity_map[i] *= normalise;
     }
 }
 
@@ -137,8 +137,7 @@ static void allocate_memory(void) {
         exit(EXIT_FAILURE);
     }
 
-    // malloc does not set memory to zero, we need to read from `activity_map` before writing it
-    activity_map = (float *)calloc(D * D, sizeof(float));
+    activity_map = (float *)malloc(sizeof(float) * D * D);
     if (activity_map == NULL) {
         fprintf(stderr, "error: failed to allocate memory: activity_map");
         exit(EXIT_FAILURE);

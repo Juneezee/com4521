@@ -7,3 +7,14 @@
 0.234f, 0.567f, , ,
 # another example of missing information
 0.987f, 0.765f,,,
+
+# all missing, no space around commas
+,,,,
+
+# all missing, space around commas
+, , , ,
+
+# a value in between, no space around
+,,0.3f,,
+
+, , 0.6f, ,

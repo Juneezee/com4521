@@ -59,9 +59,9 @@ void parse_argv(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (strncmp(argv[3], "CPU", sizeof(char *)) == 0) {
+    if (strcmp(argv[3], "CPU") == 0) {
         M = CPU;
-    } else if (strncmp(argv[3], "OPENMP", sizeof(char *)) == 0) {
+    } else if (strcmp(argv[3], "OPENMP") == 0) {
         M = OPENMP;
     } else {
         fprintf(stderr, "error: invalid operation mode: %s\n", argv[3]);
@@ -71,22 +71,22 @@ void parse_argv(int argc, char *argv[]) {
     // Optional argv, user should be able to specify flags in any order
     // If a flag is specified more than 1 time, only the last one will be used
     for (int i = 4; i < argc; i += 2) {
-        const char *flag = argv[i];
-        const unsigned int size = sizeof flag;
+        switch (argv[i][1]) {
+            case 'i':
+                I = str_to_u_int(argv[i + 1]);
+                break;
+            case 'f':
+                input_file = argv[i + 1];
 
-        if (strncmp(flag, "-i", size) == 0) {
-            I = str_to_u_int(argv[i + 1]);
-        } else if (strncmp(flag, "-f", size) == 0) {
-            input_file = argv[i + 1];
-
-            // -f specified but no input file provided
-            if (input_file == NULL) {
-                fprintf(stderr, "error: an input file is required for option: -f\n");
+                // -f specified but no input file provided
+                if (input_file == NULL) {
+                    fprintf(stderr, "error: an input file is required for option: -f\n");
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            default:
+                fprintf(stderr, "error: unknown option `%s`\n", argv[i]);
                 exit(EXIT_FAILURE);
-            }
-        } else {
-            fprintf(stderr, "error: unknown option `%s`\n", flag);
-            exit(EXIT_FAILURE);
         }
     }
 }
@@ -96,7 +96,7 @@ void parse_argv(int argc, char *argv[]) {
  * including validation for overflow and invalid inputs
  *
  * @param str The string to convert into unsigned int
- * @return unsigned int The converted unsigned int
+ * @return res The converted unsigned int
  */
 static unsigned int str_to_u_int(char *str) {
     // Case: `str` is null, empty or a space

@@ -4,17 +4,14 @@
 
 #define USER_NAME "acb16zje"
 
-#define G           9.8f    // gravitational constant
-#define dt          0.01f   // time step
-#define SOFTENING   2.0f    // softening parameter to help with numerical instability
+#define G                9.8f    // gravitational constant
+#define dt               0.01f   // time step
+#define SOFTENING        2.0f    // softening parameter to help with numerical instability
+#define SOFTENING_SQUARE 4.0f
 
 typedef struct nbody {
     float x, y, vx, vy, m;
 } nbody;
-
-typedef struct vector {
-    float x, y;
-} vector;
 
 typedef enum MODE { CPU, OPENMP, CUDA } MODE;
 
