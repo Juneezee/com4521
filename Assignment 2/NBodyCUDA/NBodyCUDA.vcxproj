@@ -67,7 +67,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
-      <CodeGeneration>compute_35,sm_35</CodeGeneration>
+      <CodeGeneration>compute_52,sm_52;compute_61,sm_61</CodeGeneration>
       <AdditionalOptions>-Xcompiler -openmp %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -94,7 +94,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
-      <CodeGeneration>compute_35,sm_35</CodeGeneration>
+      <CodeGeneration>compute_52,sm_52;compute_61,sm_61</CodeGeneration>
       <AdditionalOptions>-Xcompiler -openmp %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -105,6 +105,12 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
   <ItemGroup>
     <ClInclude Include="NBody.h" />
     <ClInclude Include="NBodyVisualiser.h" />
+    <ClInclude Include="nbody_args.h" />
+    <ClInclude Include="nbody_data.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="nbody_args.cu" />
+    <ClCompile Include="nbody_data.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

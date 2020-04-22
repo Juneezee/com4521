@@ -232,7 +232,7 @@ void setNBodyPositions(const nbody *bodies) {
     }
 
     Bodies = bodies;
-    if ((PositionsX != 0) || (PositionsY != 0)) {
+    if (PositionsX != 0 || PositionsY != 0) {
         printf("Warning: You should use either setNBodyPositions2f or setNBodyPositions\n");
     }
 }
@@ -290,7 +290,7 @@ void displayLoop(void) {
     if (frames == TIMING_FRAME_COUNT) {
         frames = 0;
         elapsed /= TIMING_FRAME_COUNT;
-        sprintf(title, "Com4521 Assignment - NBody Visualiser (%f FPS)", 1000.0f / elapsed);
+        sprintf(title, "COM4521 Assignment - NBody Visualiser (%f FPS)", 1000.0f / elapsed);
         glutSetWindowTitle(title);
         elapsed = 0;
     }
@@ -326,7 +326,7 @@ void displayLoop(void) {
         cudaGraphicsResourceGetMappedPointer((void **)&dptr, &num_bytes, cuda_hist_vbo_resource);
         //kernel to map data into buffer
         blocks = D * D / 256;
-        if ((D * D) % 256 != 0)
+        if (D * D % 256 != 0)
             blocks++;
         copyHistData << <blocks, 256 >> > (dptr, Densities, D);
         cudaGraphicsUnmapResources(1, &cuda_hist_vbo_resource, 0);
@@ -348,7 +348,7 @@ void displayLoop(void) {
                 dptr[index] = Bodies[i].x;
                 dptr[index + 1] = Bodies[i].y;
             }
-        } else if ((PositionsX != 0) && (PositionsY != 0)) {
+        } else if (PositionsX != 0 && PositionsY != 0) {
             for (i = 0; i < N; i++) {
                 const unsigned int index = i * 2;
                 dptr[index] = PositionsX[i];
@@ -510,8 +510,8 @@ void initHistVertexData() {
     unsigned int *ids = (unsigned int *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
     for (unsigned int x = 0; x < D; x++) {
         for (unsigned int y = 0; y < D; y++) {
-            int index = x + y * D;
-            int offset = index * 4;
+            const int index = x + y * D;
+            const int offset = index * 4;
 
             //four vertices (a quad) have the same instance index
             ids[offset + 0] = index;
@@ -662,7 +662,7 @@ void destroyViewer() {
 
 void initGL() {
     int argc = 1;
-    char *argv[] = { "Com4521 Assignment - NBody Visualiser" };
+    char *argv[] = { _strdup("COM4521 Assignment - NBody Visualiser") };
 
     //glut init
     glutInit(&argc, argv);
@@ -761,9 +761,9 @@ void render(void) {
 }
 
 void checkGLError() {
-    int Error;
-    if ((Error = glGetError()) != GL_NO_ERROR) {
-        const char *Message = (const char *)gluErrorString(Error);
+    const int error = glGetError();
+    if (error != GL_NO_ERROR) {
+        const char *Message = (const char *)gluErrorString(error);
         fprintf(stderr, "OpenGL Error : %s\n", Message);
     }
 }

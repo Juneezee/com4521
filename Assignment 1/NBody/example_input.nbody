@@ -17,4 +17,8 @@
 # a value in between, no space around
 ,,0.3f,,
 
+# a value in between, space around
 , , 0.6f, ,
+
+# a single f
+f, 0.1, 0.1, 0.1, 0.1
