@@ -37,6 +37,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lab5_Exercise2", "Lab5_Exer
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lab5_Exercise3", "Lab5_Exercise3\Lab5_Exercise3.vcxproj", "{67F9A7C3-CF50-469D-ACCD-95F992389411}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lab6_Exercise1", "Lab6_Exercise1\Lab6_Exercise1.vcxproj", "{F5814702-CE4E-450C-A519-05F232833DE1}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lab6_Exercise2", "Lab6_Exercise2\Lab6_Exercise2.vcxproj", "{2CD55071-0BD7-415F-8817-BB48C8628BDE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -169,6 +173,18 @@ Global
 		{67F9A7C3-CF50-469D-ACCD-95F992389411}.Release|x64.ActiveCfg = Release|x64
 		{67F9A7C3-CF50-469D-ACCD-95F992389411}.Release|x64.Build.0 = Release|x64
 		{67F9A7C3-CF50-469D-ACCD-95F992389411}.Release|x86.ActiveCfg = Release|x64
+		{F5814702-CE4E-450C-A519-05F232833DE1}.Debug|x64.ActiveCfg = Debug|x64
+		{F5814702-CE4E-450C-A519-05F232833DE1}.Debug|x64.Build.0 = Debug|x64
+		{F5814702-CE4E-450C-A519-05F232833DE1}.Debug|x86.ActiveCfg = Debug|x64
+		{F5814702-CE4E-450C-A519-05F232833DE1}.Release|x64.ActiveCfg = Release|x64
+		{F5814702-CE4E-450C-A519-05F232833DE1}.Release|x64.Build.0 = Release|x64
+		{F5814702-CE4E-450C-A519-05F232833DE1}.Release|x86.ActiveCfg = Release|x64
+		{2CD55071-0BD7-415F-8817-BB48C8628BDE}.Debug|x64.ActiveCfg = Debug|x64
+		{2CD55071-0BD7-415F-8817-BB48C8628BDE}.Debug|x64.Build.0 = Debug|x64
+		{2CD55071-0BD7-415F-8817-BB48C8628BDE}.Debug|x86.ActiveCfg = Debug|x64
+		{2CD55071-0BD7-415F-8817-BB48C8628BDE}.Release|x64.ActiveCfg = Release|x64
+		{2CD55071-0BD7-415F-8817-BB48C8628BDE}.Release|x64.Build.0 = Release|x64
+		{2CD55071-0BD7-415F-8817-BB48C8628BDE}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
