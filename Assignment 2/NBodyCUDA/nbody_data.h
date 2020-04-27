@@ -3,6 +3,6 @@
 
 #include "NBody.h"
 
-void initialise_data(nbody *);
+void initialise_data(nbody *) noexcept;
 
 #endif // NBODY_DATA_H

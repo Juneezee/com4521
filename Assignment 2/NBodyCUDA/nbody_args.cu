@@ -1,7 +1,7 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cctype>
 
 #include "NBody.h"
 #include "nbody_args.h"
@@ -20,7 +20,7 @@ static unsigned int str_to_u_int(const char *) noexcept;
  * Prints help message
  */
 static void print_help() noexcept {
-    printf("nbody_%s N D M [-i I] [-i input_file]\n", USER_NAME);
+    printf("nbody_acb16zje N D M [-i I] [-i input_file]\n");
 
     printf("where:\n");
     printf("\tN                Is the number of bodies to simulate.\n");

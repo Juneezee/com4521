@@ -1,6 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "nbody_data.h"
 
@@ -17,10 +17,9 @@ extern unsigned int N;
 extern char *input_file;
 
 static void generate_random_data(nbody *) noexcept;
-static void read_input_file(nbody *);
+static void read_input_file(nbody *) noexcept;
 static int read_line(FILE *, char[]) noexcept;
-static void validate_commas(const char[]) noexcept;
-static void parse_initial_values(nbody *, char[]) noexcept;
+static bool validate_commas(const char[]) noexcept;
 static char *tokenise(char *) noexcept;
 static float str_to_float(const char *) noexcept;
 
@@ -28,9 +27,9 @@ static float str_to_float(const char *) noexcept;
  * Depending on program arguments, either generate random data
  * or read initial data from file
  *
- * @param nbodies
+ * @param nbodies A pointer to N-bodies structure
  */
-void initialise_data(nbody *nbodies) {
+void initialise_data(nbody *nbodies) noexcept {
     if (input_file == nullptr) {
         generate_random_data(nbodies);
     } else {
@@ -58,7 +57,7 @@ static void generate_random_data(nbody *nbodies) noexcept {
  *
  * @param nbodies A pointer to N-bodies structure
  */
-static void read_input_file(nbody *nbodies) {
+static void read_input_file(nbody *nbodies) noexcept {
     FILE *f = fopen(input_file, "r");
 
     if (f == nullptr) {
@@ -71,9 +70,20 @@ static void read_input_file(nbody *nbodies) {
     unsigned int nbody_count = 0;
 
     while (read_line(f, buffer)) {
-        if (nbody_count < N) {
-            validate_commas(buffer);
-            parse_initial_values(&nbodies[nbody_count], buffer);
+        if (nbody_count < N && validate_commas(buffer)) {
+            // Convert the 5 initial values in the line buffer to float and store in nbody
+            // `tokenise` maintains a static pointer to buffer, pass NULL to get the next token
+            const char *x_token = tokenise(buffer);
+            const char *y_token = tokenise(nullptr);
+            const char *vx_token = tokenise(nullptr);
+            const char *vy_token = tokenise(nullptr);
+            const char *m_token = tokenise(nullptr);
+
+            nbodies[nbody_count].x = x_token == nullptr ? DEFAULT_X : str_to_float(x_token);
+            nbodies[nbody_count].y = y_token == nullptr ? DEFAULT_Y : str_to_float(y_token);
+            nbodies[nbody_count].vx = vx_token == nullptr ? DEFAULT_VX : str_to_float(vx_token);
+            nbodies[nbody_count].vy = vy_token == nullptr ? DEFAULT_VY : str_to_float(vy_token);
+            nbodies[nbody_count].m = m_token == nullptr ? DEFAULT_M : str_to_float(m_token);
         }
 
         ++nbody_count;
@@ -81,11 +91,9 @@ static void read_input_file(nbody *nbodies) {
 
     fclose(f);
 
-    // Throw error is N supplied != number of bodies in the input file
+    // Throw error if N supplied != number of bodies in the input file
     if (nbody_count != N) {
-        fprintf(stderr,
-            "error: argument N (%u) != the number of bodies in the input file (%u)",
-            N, nbody_count);
+        fprintf(stderr, "error: argument N (%u) != the number of bodies in the input file (%u)", N, nbody_count);
         exit(EXIT_FAILURE);
     }
 }
@@ -133,8 +141,9 @@ static int read_line(FILE *f, char buffer[]) noexcept {
  * Validate the line containing the initial values. It should only contain 4 commas.
  *
  * @param buffer The line buffer
+ * @return True if the comma count is exactly 4, otherwise exit with failure
  */
-static void validate_commas(const char buffer[]) noexcept {
+static bool validate_commas(const char buffer[]) noexcept {
     unsigned int comma_count = 0;
 
     for (unsigned int i = 0; buffer[i]; ++i) {
@@ -145,28 +154,8 @@ static void validate_commas(const char buffer[]) noexcept {
         fprintf(stderr, "error: incorrect number of commas at line: %s\n", buffer);
         exit(EXIT_FAILURE);
     }
-}
 
-/**
- * Convert the 5 initial values in the line buffer to float and store in nbody
- *
- * @param nb A pointer to an N-body structure
- * @param buffer The line buffer
- */
-static void parse_initial_values(nbody *nb, char buffer[]) noexcept {
-    const char *x_token = tokenise(buffer);
-
-    // `tokenise` maintains a static pointer to buffer, pass NULL to get the next token
-    const char *y_token = tokenise(nullptr);
-    const char *vx_token = tokenise(nullptr);
-    const char *vy_token = tokenise(nullptr);
-    const char *m_token = tokenise(nullptr);
-
-    nb->x = x_token == nullptr ? DEFAULT_X : str_to_float(x_token);
-    nb->y = y_token == nullptr ? DEFAULT_Y : str_to_float(y_token);
-    nb->vx = vx_token == nullptr ? DEFAULT_VX : str_to_float(vx_token);
-    nb->vy = vy_token == nullptr ? DEFAULT_VY : str_to_float(vy_token);
-    nb->m = m_token == nullptr ? DEFAULT_M : str_to_float(m_token);
+    return true;
 }
 
 /**

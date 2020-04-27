@@ -2,11 +2,10 @@
 #ifndef __NBODY_HEADER__
 #define __NBODY_HEADER__
 
-#define USER_NAME "acb16zje"
-
-#define G			     1.0f    // gravitational constant (not the actual value of G, a value of G used to avoid issues with numeric precision)
-#define dt			     0.01f   // time step
-#define SOFTENING	     2.0f    // softening parameter to help with numerical instability
+#define G                1.0f    // gravitational constant (not the actual value of G, a value of G used to avoid issues with numeric precision)
+#define dt               0.01f   // time step
+#define SOFTENING        2.0f    // softening parameter to help with numerical instability
+#define dt_MUL_G         0.01f
 #define SOFTENING_SQUARE 4.0f
 
 typedef struct nbody {

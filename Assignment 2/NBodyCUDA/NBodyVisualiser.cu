@@ -1,7 +1,6 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
+#include <cstdlib>
+#include <cstdio>
+#include <ctime>
 
 //include the header file
 //Uncomment below if including into a *.c file rather than *.cu
@@ -18,11 +17,11 @@
 static unsigned int N;
 static unsigned int D;
 static MODE M;
-const float *PositionsX = 0;
-const float *PositionsY = 0;
-const nbody *Bodies = 0;
-const float *Densities = 0;
-void (*simulate_function)(void) = 0;
+const float *PositionsX = nullptr;
+const float *PositionsY = nullptr;
+const nbody *Bodies = nullptr;
+const float *Densities = nullptr;
+void (*simulate_function)() = nullptr;
 
 // instancing variables for histogram
 GLuint vao_hist = 0;
@@ -67,14 +66,14 @@ unsigned int frames;
 char title[128];
 
 // function prototypes
-void displayLoop(void);
+void displayLoop();
 void initHistShader();
 void initNBodyShader();
 void initHistVertexData();
 void initNBodyVertexData();
 void initGL();
 void destroyViewer();
-void render(void);
+void render();
 void checkGLError();
 void handleKeyboardDefault(unsigned char key, int x, int y);
 void handleMouseDefault(int button, int state, int x, int y);
@@ -116,7 +115,7 @@ const char *nbody_vertexShaderSource =
 //////////////////////////////// CUDA Kernels              ////////////////////////////////
 
 __global__ void copyNBodyData2f(float *buffer, const float *x, const float *y, unsigned int N) {
-    unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
+    const unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (i < N) {
         //copy data to mapped buffer
@@ -127,7 +126,7 @@ __global__ void copyNBodyData2f(float *buffer, const float *x, const float *y, u
 }
 
 __global__ void copyNBodyData(float *buffer, const nbody *bodies, unsigned int N) {
-    unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
+    const unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (i < N) {
         //copy data to mapped buffer
@@ -137,8 +136,8 @@ __global__ void copyNBodyData(float *buffer, const nbody *bodies, unsigned int N
     }
 }
 
-__global__ void copyHistData(float *buffer, const float *densities, unsigned int D) {
-    unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
+__global__ void copyHistData(float *buffer, const float *densities, const unsigned int D) {
+    const unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
 
     if (i < D * D) {
         //copy data to mapped buffer
@@ -147,7 +146,7 @@ __global__ void copyHistData(float *buffer, const float *densities, unsigned int
 }
 
 //////////////////////////////// Header declared functions ////////////////////////////////
-void initViewer(unsigned int n, unsigned int d, MODE m, void (*simulate)(void)) {
+void initViewer(unsigned int n, unsigned int d, MODE m, void (*simulate)()) {
     N = n;
     D = d;
     M = m;
@@ -207,7 +206,7 @@ void setNBodyPositions2f(const float *positions_x, const float *positions_y) {
 
     PositionsX = positions_x;
     PositionsY = positions_y;
-    if (Bodies != 0) {
+    if (Bodies != nullptr) {
         printf("Warning: You should use either setNBodyPositions2f or setNBodyPositions\n");
     }
 }
@@ -232,7 +231,7 @@ void setNBodyPositions(const nbody *bodies) {
     }
 
     Bodies = bodies;
-    if (PositionsX != 0 || PositionsY != 0) {
+    if (PositionsX != nullptr || PositionsY != nullptr) {
         printf("Warning: You should use either setNBodyPositions2f or setNBodyPositions\n");
     }
 }
@@ -269,12 +268,12 @@ void startVisualisationLoop() {
 
 //////////////////////////////// Source module functions ////////////////////////////////
 
-void displayLoop(void) {
+void displayLoop() {
     unsigned int i;
     float *dptr;
     size_t num_bytes;
 
-    if (simulate_function == 0) {
+    if (simulate_function == nullptr) {
         printf("Error: Simulate function has not been defined by calling initViewer(...)\n");
         return;
     }
@@ -282,7 +281,7 @@ void displayLoop(void) {
     //timing
     if (M == CUDA)
         cudaDeviceSynchronize();
-    const float t = (float)clock();
+    const float t = static_cast<float>(clock());
     if (prev_time)
         elapsed += t - prev_time;
     prev_time = t;
@@ -303,33 +302,33 @@ void displayLoop(void) {
         //NBODY: map buffer to device pointer so Kernel can populate it
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, tbo_nbody);
         num_bytes = N * 3 * sizeof(float);
-        cudaGraphicsMapResources(1, &cuda_nbody_vbo_resource, 0);
+        cudaGraphicsMapResources(1, &cuda_nbody_vbo_resource, nullptr);
         cudaGraphicsResourceGetMappedPointer((void **)&dptr, &num_bytes, cuda_nbody_vbo_resource);
         //kernel to map data into buffer
         unsigned int blocks = N / 256;
         if (N % 256 != 0)
             blocks++;
         //two possible formats for users to supplier body data
-        if (Bodies != 0) {
+        if (Bodies != nullptr) {
             copyNBodyData << <blocks, 256 >> > (dptr, Bodies, N);
-        } else if (PositionsX != 0 && PositionsY != 0) {
+        } else if (PositionsX != nullptr && PositionsY != nullptr) {
             copyNBodyData2f << <blocks, 256 >> > (dptr, PositionsX, PositionsY, N);
         }
-        cudaGraphicsUnmapResources(1, &cuda_nbody_vbo_resource, 0);
+        cudaGraphicsUnmapResources(1, &cuda_nbody_vbo_resource, nullptr);
         checkCUDAError("Error copying NBody data from supplier device pointer\n");
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, 0);
 
         //HIST: map buffer to device pointer so Kernel can populate it
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, tbo_nbody);
         num_bytes = D * D * sizeof(float);
-        cudaGraphicsMapResources(1, &cuda_hist_vbo_resource, 0);
+        cudaGraphicsMapResources(1, &cuda_hist_vbo_resource, nullptr);
         cudaGraphicsResourceGetMappedPointer((void **)&dptr, &num_bytes, cuda_hist_vbo_resource);
         //kernel to map data into buffer
         blocks = D * D / 256;
         if (D * D % 256 != 0)
             blocks++;
         copyHistData << <blocks, 256 >> > (dptr, Densities, D);
-        cudaGraphicsUnmapResources(1, &cuda_hist_vbo_resource, 0);
+        cudaGraphicsUnmapResources(1, &cuda_hist_vbo_resource, nullptr);
         checkCUDAError("Error copying Activity Map data from supplier device pointer\n");
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, 0);
     }
@@ -337,18 +336,18 @@ void displayLoop(void) {
     else {
         //map buffer to positions TBO and copy data to it from user supplied pointer
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, tbo_nbody);
-        dptr = (float *)glMapBuffer(GL_TEXTURE_BUFFER_EXT, GL_WRITE_ONLY); //tbo_nbody buffer
-        if (dptr == 0) {
+        dptr = static_cast<float *>(glMapBuffer(GL_TEXTURE_BUFFER_EXT, GL_WRITE_ONLY)); //tbo_nbody buffer
+        if (dptr == nullptr) {
             printf("Error: Unable to map nBody Texture Buffer Object\n");
             return;
         }
-        if (Bodies != 0) {
+        if (Bodies != nullptr) {
             for (i = 0; i < N; i++) {
                 const unsigned int index = i * 2;
                 dptr[index] = Bodies[i].x;
                 dptr[index + 1] = Bodies[i].y;
             }
-        } else if (PositionsX != 0 && PositionsY != 0) {
+        } else if (PositionsX != nullptr && PositionsY != nullptr) {
             for (i = 0; i < N; i++) {
                 const unsigned int index = i * 2;
                 dptr[index] = PositionsX[i];
@@ -360,12 +359,12 @@ void displayLoop(void) {
 
         //map hist buffer to positions TBO and copy data to it from user supplied pointer
         glBindBuffer(GL_TEXTURE_BUFFER_EXT, tbo_hist);
-        dptr = (float *)glMapBuffer(GL_TEXTURE_BUFFER_EXT, GL_WRITE_ONLY); //tbo_nbody buffer
-        if (dptr == 0) {
+        dptr = static_cast<float *>(glMapBuffer(GL_TEXTURE_BUFFER_EXT, GL_WRITE_ONLY)); //tbo_nbody buffer
+        if (dptr == nullptr) {
             printf("Error: Unable to map Histogram Texture Buffer Object\n");
             return;
         }
-        if (Densities != 0) {
+        if (Densities != nullptr) {
             for (i = 0; i < D * D; i++) {
                 dptr[i] = Densities[i];
             }
@@ -382,7 +381,7 @@ void displayLoop(void) {
 void initHistShader() {
     //hist vertex shader
     vs_hist_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vs_hist_shader, 1, &hist_vertexShaderSource, 0);
+    glShaderSource(vs_hist_shader, 1, &hist_vertexShaderSource, nullptr);
     glCompileShader(vs_hist_shader);
 
     // check for errors
@@ -409,7 +408,7 @@ void initHistShader() {
 
     // get shader variables
     vs_hist_instance_index = glGetAttribLocation(vs_hist_program, "instance_index");
-    if (vs_hist_instance_index == (GLuint)-1) {
+    if (vs_hist_instance_index == static_cast<GLuint>(-1)) {
         printf("Warning: Histogram Shader program missing 'attribute in uint instance_index'\n");
     }
 
@@ -421,7 +420,7 @@ void initHistShader() {
 void initNBodyShader() {
     //nbody vertex shader
     vs_nbody_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vs_nbody_shader, 1, &nbody_vertexShaderSource, 0);
+    glShaderSource(vs_nbody_shader, 1, &nbody_vertexShaderSource, nullptr);
     glCompileShader(vs_nbody_shader);
 
     // check for errors
@@ -448,7 +447,7 @@ void initNBodyShader() {
 
     // get shader variables
     vs_nbody_instance_index = glGetAttribLocation(vs_nbody_program, "instance_index");
-    if (vs_nbody_instance_index == (GLuint)-1) {
+    if (vs_nbody_instance_index == static_cast<GLuint>(-1)) {
         printf("Warning: nbody Program Shader program missing 'attribute in uint instance_index'\n");
     }
 
@@ -467,15 +466,15 @@ void initHistVertexData() {
     // create buffer object (all vertex positions normalised between -0.5 and +0.5)
     glGenBuffers(1, &vao_hist_vertices);
     glBindBuffer(GL_ARRAY_BUFFER, vao_hist_vertices);
-    glBufferData(GL_ARRAY_BUFFER, D * D * 4 * 3 * sizeof(float), 0, GL_STATIC_DRAW);
-    float *verts = (float *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
-    const float quad_size = 1.0f / (float)D;
+    glBufferData(GL_ARRAY_BUFFER, D * D * 4 * 3 * sizeof(float), nullptr, GL_STATIC_DRAW);
+    float *verts = static_cast<float *>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
+    const float quad_size = 1.0f / static_cast<float>(D);
     for (unsigned int x = 0; x < D; x++) {
         for (unsigned int y = 0; y < D; y++) {
             const int offset = (x + y * D) * 3 * 4;
 
-            const float x_min = (float)x / (float)D;
-            const float y_min = (float)y / (float)D;
+            const float x_min = static_cast<float>(x) / static_cast<float>(D);
+            const float y_min = static_cast<float>(y) / static_cast<float>(D);
 
             //first vertex
             verts[offset + 0] = x_min - 0.5f;
@@ -499,15 +498,15 @@ void initHistVertexData() {
         }
     }
     glUnmapBuffer(GL_ARRAY_BUFFER);
-    glVertexAttribPointer((GLuint)0, 3, GL_FLOAT, GL_FALSE, 0, 0); // Set up our vertex attributes pointer
+    glVertexAttribPointer(static_cast<GLuint>(0), 3, GL_FLOAT, GL_FALSE, 0, nullptr); // Set up our vertex attributes pointer
     glEnableVertexAttribArray(0);
     checkGLError();
 
     // instance index buffer
     glGenBuffers(1, &vao_hist_instance_ids);
     glBindBuffer(GL_ARRAY_BUFFER, vao_hist_instance_ids);
-    glBufferData(GL_ARRAY_BUFFER, D * D * 4 * sizeof(unsigned int), 0, GL_STATIC_DRAW);
-    unsigned int *ids = (unsigned int *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+    glBufferData(GL_ARRAY_BUFFER, D * D * 4 * sizeof(unsigned int), nullptr, GL_STATIC_DRAW);
+    unsigned int *ids = static_cast<unsigned int *>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
     for (unsigned int x = 0; x < D; x++) {
         for (unsigned int y = 0; y < D; y++) {
             const int index = x + y * D;
@@ -522,7 +521,7 @@ void initHistVertexData() {
     }
 
     //map instance
-    glVertexAttribIPointer((GLuint)vs_hist_instance_index, 1, GL_UNSIGNED_INT, 0, 0); // Set up instance id attributes pointer in shader
+    glVertexAttribIPointer(static_cast<GLuint>(vs_hist_instance_index), 1, GL_UNSIGNED_INT, 0, nullptr); // Set up instance id attributes pointer in shader
     glEnableVertexAttribArray(vs_hist_instance_index);
     glUnmapBuffer(GL_ARRAY_BUFFER);
 
@@ -533,7 +532,7 @@ void initHistVertexData() {
 
     glGenBuffers(1, &tbo_hist);
     glBindBuffer(GL_TEXTURE_BUFFER, tbo_hist);
-    glBufferData(GL_TEXTURE_BUFFER, D * D * 1 * sizeof(float), 0, GL_DYNAMIC_DRAW); // 1 float elements in a texture buffer object for histogram density
+    glBufferData(GL_TEXTURE_BUFFER, D * D * 1 * sizeof(float), nullptr, GL_DYNAMIC_DRAW); // 1 float elements in a texture buffer object for histogram density
 
     /* generate texture */
     glGenTextures(1, &tex_hist);
@@ -564,8 +563,8 @@ void initNBodyVertexData() {
     // create buffer object (all vertex positions normalised between -0.5 and +0.5)
     glGenBuffers(1, &vao_nbody_vertices);
     glBindBuffer(GL_ARRAY_BUFFER, vao_nbody_vertices);
-    glBufferData(GL_ARRAY_BUFFER, N * 3 * sizeof(float), 0, GL_STATIC_DRAW);
-    float *verts = (float *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+    glBufferData(GL_ARRAY_BUFFER, N * 3 * sizeof(float), nullptr, GL_STATIC_DRAW);
+    float *verts = static_cast<float *>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
     for (unsigned int i = 0; i < N; i++) {
         const int offset = i * 3;
 
@@ -575,22 +574,22 @@ void initNBodyVertexData() {
         verts[offset + 2] = 0.0f;
     }
     glUnmapBuffer(GL_ARRAY_BUFFER);
-    glVertexAttribPointer((GLuint)0, 3, GL_FLOAT, GL_FALSE, 0, 0); // Set up our vertex attributes pointer
+    glVertexAttribPointer(static_cast<GLuint>(0), 3, GL_FLOAT, GL_FALSE, 0, nullptr); // Set up our vertex attributes pointer
     glEnableVertexAttribArray(0);
     checkGLError();
 
     // instance index buffer
     glGenBuffers(1, &vao_nbody_instance_ids);
     glBindBuffer(GL_ARRAY_BUFFER, vao_nbody_instance_ids);
-    glBufferData(GL_ARRAY_BUFFER, N * 1 * sizeof(unsigned int), 0, GL_STATIC_DRAW);
-    unsigned int *ids = (unsigned int *)glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
+    glBufferData(GL_ARRAY_BUFFER, N * 1 * sizeof(unsigned int), nullptr, GL_STATIC_DRAW);
+    unsigned int *ids = static_cast<unsigned int *>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
     for (unsigned int i = 0; i < N; i++) {
         //single vertex as it is a point
         ids[i] = i;
     }
 
     //map instance
-    glVertexAttribIPointer((GLuint)vs_nbody_instance_index, 1, GL_UNSIGNED_INT, 0, 0); // Set up instance id attributes pointer in shader
+    glVertexAttribIPointer(static_cast<GLuint>(vs_nbody_instance_index), 1, GL_UNSIGNED_INT, 0, nullptr); // Set up instance id attributes pointer in shader
     glEnableVertexAttribArray(vs_nbody_instance_index);
     glUnmapBuffer(GL_ARRAY_BUFFER);
 
@@ -601,7 +600,7 @@ void initNBodyVertexData() {
 
     glGenBuffers(1, &tbo_nbody);
     glBindBuffer(GL_TEXTURE_BUFFER, tbo_nbody);
-    glBufferData(GL_TEXTURE_BUFFER, N * 2 * sizeof(float), 0, GL_DYNAMIC_DRAW); // 2 float elements in a texture buffer object for x and y position
+    glBufferData(GL_TEXTURE_BUFFER, N * 2 * sizeof(float), nullptr, GL_DYNAMIC_DRAW); // 2 float elements in a texture buffer object for x and y position
 
     /* generate texture */
     glGenTextures(1, &tex_nbody);
@@ -698,10 +697,10 @@ void initGL() {
     // projection
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(60.0, (GLfloat)WINDOW_WIDTH / (GLfloat)WINDOW_HEIGHT, 0.001, 10.0);
+    gluPerspective(60.0, static_cast<GLfloat>(WINDOW_WIDTH) / static_cast<GLfloat>(WINDOW_HEIGHT), 0.001, 10.0);
 }
 
-void render(void) {
+void render() {
     // set view matrix and prepare for rending
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glMatrixMode(GL_MODELVIEW);
@@ -768,7 +767,7 @@ void checkGLError() {
     }
 }
 
-void handleKeyboardDefault(unsigned char key, int x, int y) {
+void handleKeyboardDefault(const unsigned char key, int x, int y) {
     switch (key) {
         case 27: case 'q': //escape key or q key
             //return control to the users program to allow them to clean-up any allcoated memory etc.
@@ -797,8 +796,8 @@ void handleMouseDefault(int button, int state, int x, int y) {
 }
 
 void handleMouseMotionDefault(int x, int y) {
-    const float dx = (float)(x - mouse_old_x);
-    const float dy = (float)(y - mouse_old_y);
+    const float dx = static_cast<float>(x - mouse_old_x);
+    const float dy = static_cast<float>(y - mouse_old_y);
 
     if (mouse_buttons & 1) {
         rotate_x += dy * 0.2f;

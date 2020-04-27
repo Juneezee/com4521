@@ -101,12 +101,16 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
   <ItemGroup>
     <CudaCompile Include="NBody.cu" />
     <CudaCompile Include="NBodyVisualiser.cu" />
+    <CudaCompile Include="nbody_cpu.cu" />
+    <CudaCompile Include="nbody_gpu.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="NBody.h" />
     <ClInclude Include="NBodyVisualiser.h" />
     <ClInclude Include="nbody_args.h" />
+    <ClInclude Include="nbody_cpu.h" />
     <ClInclude Include="nbody_data.h" />
+    <ClInclude Include="nbody_gpu.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="nbody_args.cu" />
