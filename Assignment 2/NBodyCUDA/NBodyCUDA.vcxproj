@@ -102,7 +102,11 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <CudaCompile Include="NBody.cpp" />
     <CudaCompile Include="NBodyVisualiser.cu" />
     <CudaCompile Include="nbody_cpu.cpp" />
-    <CudaCompile Include="nbody_gpu.cu" />
+    <CudaCompile Include="nbody_gpu.cu">
+      <PtxAsOptionV Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PtxAsOptionV>
+      <PtxAsOptionV Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</PtxAsOptionV>
+      <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateLineInfo>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="NBody.h" />

@@ -7,6 +7,7 @@
 extern unsigned int N;
 extern unsigned int D;
 extern MODE M;
+extern unsigned int I;
 
 // Runtime constants
 unsigned int grid_size;

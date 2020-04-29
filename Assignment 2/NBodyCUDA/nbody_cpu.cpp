@@ -73,7 +73,7 @@ int main_cpu() {
 }
 
 /**
- * Perform the main simulation of the NBody system
+ * Perform the main simulation of the NBody system on the CPU
  */
 static void step_cpu() noexcept {
     int i, j;
