@@ -12,11 +12,17 @@ extern unsigned int D;
 extern MODE M;
 extern unsigned int I;
 
+// External variables defined in `NBody`
+extern unsigned int grid_size;
+extern float normalising_factor;
+extern size_t nbodies_size;
+extern size_t activity_map_size;
+
 static nbody *nbodies;
 static float *activity_map;
 
 // Function declarations
-static void step() noexcept;
+static void step_cpu() noexcept;
 static void allocate_memory() noexcept;
 
 /**
@@ -33,7 +39,7 @@ int main_cpu() {
 
     if (I == 0) {
         // Start the visualiser
-        initViewer(N, D, M, &step);
+        initViewer(N, D, M, &step_cpu);
         setNBodyPositions(nbodies);
         setHistogramData(activity_map);
         startVisualisationLoop();
@@ -42,12 +48,10 @@ int main_cpu() {
         const double start = omp_get_wtime();
 
         for (unsigned i = 0; i < I; ++i) {
-            step();
+            step_cpu();
         }
 
-        const double end = omp_get_wtime();
-
-        const double seconds = end - start;
+        const double seconds = omp_get_wtime() - start;
         const int milliseconds = static_cast<int>((seconds - static_cast<int>(seconds)) * 1000);
 
         printf("Execution time %d seconds %d milliseconds\n", static_cast<int>(seconds), milliseconds);
@@ -61,14 +65,13 @@ int main_cpu() {
 }
 
 /**
- * Perform the main simulation of the NBody system
+ * Perform the main simulation of the NBody system on the CPU
  */
-static void step() noexcept {
+static void step_cpu() noexcept {
     int i;
 
-    // Clear the previous step values
-    const unsigned int grid_size = D * D;
-    memset(activity_map, 0, grid_size * sizeof(float));
+    // Clear the activity map of previous step
+    memset(activity_map, 0, activity_map_size);
 
 #pragma omp parallel for schedule(static) default(none) shared(N, D, nbodies, activity_map) if (M == OPENMP)
     for (i = 0; i < static_cast<int>(N); ++i) {
@@ -112,9 +115,8 @@ static void step() noexcept {
     }
 
     /* Loop through the `activity_map` to normalise the body counts */
-    const float normalise = static_cast<float>(D) / static_cast<float>(N);
     for (i = 0; i < static_cast<int>(grid_size); ++i) {
-        activity_map[i] *= normalise;
+        activity_map[i] *= normalising_factor;
     }
 }
 
@@ -122,13 +124,13 @@ static void step() noexcept {
  * Allocate required memory
  */
 static void allocate_memory() noexcept {
-    nbodies = static_cast<nbody *>(malloc(sizeof(nbody) * N));
+    nbodies = static_cast<nbody *>(malloc(nbodies_size));
     if (nbodies == nullptr) {
         fprintf(stderr, "error: failed to allocate memory: nbodies\n");
         exit(EXIT_FAILURE);
     }
 
-    activity_map = static_cast<float *>(malloc(sizeof(float) * D * D));
+    activity_map = static_cast<float *>(malloc(activity_map_size));
     if (activity_map == nullptr) {
         fprintf(stderr, "error: failed to allocate memory: activity_map");
         exit(EXIT_FAILURE);
