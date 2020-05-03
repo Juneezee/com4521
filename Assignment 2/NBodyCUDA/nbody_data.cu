@@ -1,7 +1,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <type_traits>
 
+#include "NBody.h"
 #include "nbody_data.h"
 
 #define DEFAULT_X ((float)rand() / RAND_MAX)
@@ -16,10 +18,14 @@
 extern unsigned int N;
 extern char *input_file;
 
-static void generate_random_data(nbody *) noexcept;
-static void read_input_file(nbody *) noexcept;
-static int read_line(FILE *, char[]) noexcept;
-static bool validate_commas(const char[]) noexcept;
+// Function declarations
+template <typename Nbody>
+static void read_input_file(Nbody *) noexcept;
+
+static void store_initial_values_aos(nbody *, float, float, float, float, float) noexcept;
+static void store_initial_values_soa(nbody_soa *, unsigned int, float, float, float, float, float) noexcept;
+static int read_line(FILE *, char []) noexcept;
+static bool validate_commas(const char []) noexcept;
 static char *tokenise(char *) noexcept;
 static float str_to_float(const char *) noexcept;
 
@@ -27,37 +33,99 @@ static float str_to_float(const char *) noexcept;
  * Depending on program arguments, either generate random data
  * or read initial data from file
  *
- * @param nbodies A pointer to N-bodies structure
+ * @param nbodies A pointer to N-bodies structure (Array of Structures)
  */
-void initialise_data(nbody *nbodies) noexcept {
+void initialise_data_aos(nbody *nbodies) noexcept {
     if (input_file == nullptr) {
-        generate_random_data(nbodies);
+        // Generate random data for N-bodies (Array of Structures)
+        for (unsigned int i = 0; i < N; ++i) {
+            nbodies[i].x = DEFAULT_X;
+            nbodies[i].y = DEFAULT_Y;
+            nbodies[i].vx = DEFAULT_VX;
+            nbodies[i].vy = DEFAULT_VY;
+            nbodies[i].m = DEFAULT_M;
+        }
     } else {
-        read_input_file(nbodies);
+        read_input_file<nbody>(nbodies);
     }
 }
 
 /**
- * Generate random data for N-bodies
+ * Depending on program arguments, either generate random data
+ * or read initial data from file
  *
- * @param nbodies A pointer to an N-body structure
+ * @param nbodies A pointer to N-bodies structure (Structure of Arrays)
  */
-static void generate_random_data(nbody *nbodies) noexcept {
-    for (unsigned int i = 0; i < N; ++i) {
-        nbodies[i].x = DEFAULT_X;
-        nbodies[i].y = DEFAULT_Y;
-        nbodies[i].vx = DEFAULT_VX;
-        nbodies[i].vy = DEFAULT_VY;
-        nbodies[i].m = DEFAULT_M;
+void initialise_data_soa(nbody_soa *nbodies) noexcept {
+    if (input_file == nullptr) {
+        // Generate random data for N-bodies (Structure of Arrays)
+        for (unsigned int i = 0; i < N; ++i) {
+            nbodies->x[i] = DEFAULT_X;
+            nbodies->y[i] = DEFAULT_Y;
+            nbodies->vx[i] = DEFAULT_VX;
+            nbodies->vy[i] = DEFAULT_VY;
+            nbodies->m[i] = DEFAULT_M;
+        }
+    } else {
+        read_input_file<nbody_soa>(nbodies);
     }
+}
+
+/**
+ * Store the 5 initial values into the given nbody
+ *
+ * @param body A pointer to an N-body (Array of Structures)
+ * @param x The x value
+ * @param y The y value
+ * @param vx The vx value
+ * @param vy The vy value
+ * @param m The m value
+ */
+static void store_initial_values_aos(nbody *body,
+                                     const float x,
+                                     const float y,
+                                     const float vx,
+                                     const float vy,
+                                     const float m) noexcept {
+    body->x = x;
+    body->y = y;
+    body->vx = vx;
+    body->vy = vy;
+    body->m = m;
+}
+
+/**
+ * Store the 5 initial values into the given nbody
+ *
+ * @param body A pointer to an N-body structure (Structure of Arrays)
+ * @param index The index representing the n-body
+ * @param x The x value
+ * @param y The y value
+ * @param vx The vx value
+ * @param vy The vy value
+ * @param m The m value
+ */
+static void store_initial_values_soa(nbody_soa *body,
+                                     const unsigned int index,
+                                     const float x,
+                                     const float y,
+                                     const float vx,
+                                     const float vy,
+                                     const float m) noexcept {
+    body->x[index] = x;
+    body->y[index] = y;
+    body->vx[index] = vx;
+    body->vy[index] = vy;
+    body->m[index] = m;
 }
 
 /**
  * Read initial data from file
  *
- * @param nbodies A pointer to N-bodies structure
+ * @param nbodies A pointer to N-bodies structure (AoS or SoA)
  */
-static void read_input_file(nbody *nbodies) noexcept {
+template <typename Nbody>
+static void read_input_file(Nbody *nbodies) noexcept {
     FILE *f = fopen(input_file, "r");
 
     if (f == nullptr) {
@@ -79,11 +147,17 @@ static void read_input_file(nbody *nbodies) noexcept {
             const char *vy_token = tokenise(nullptr);
             const char *m_token = tokenise(nullptr);
 
-            nbodies[nbody_count].x = x_token == nullptr ? DEFAULT_X : str_to_float(x_token);
-            nbodies[nbody_count].y = y_token == nullptr ? DEFAULT_Y : str_to_float(y_token);
-            nbodies[nbody_count].vx = vx_token == nullptr ? DEFAULT_VX : str_to_float(vx_token);
-            nbodies[nbody_count].vy = vy_token == nullptr ? DEFAULT_VY : str_to_float(vy_token);
-            nbodies[nbody_count].m = m_token == nullptr ? DEFAULT_M : str_to_float(m_token);
+            const float x = x_token == nullptr ? DEFAULT_X : str_to_float(x_token);
+            const float y = y_token == nullptr ? DEFAULT_Y : str_to_float(y_token);
+            const float vx = vx_token == nullptr ? DEFAULT_VX : str_to_float(vx_token);
+            const float vy = vy_token == nullptr ? DEFAULT_VY : str_to_float(vy_token);
+            const float m = m_token == nullptr ? DEFAULT_M : str_to_float(m_token);
+
+            if (std::is_same<Nbody, nbody_soa>::value) {
+                store_initial_values_soa(reinterpret_cast<nbody_soa *>(nbodies), nbody_count, x, y, vx, vy, m);
+            } else {
+                store_initial_values_aos(reinterpret_cast<nbody *>(&nbodies[nbody_count]), x, y, vx, vy, m);
+            }
         }
 
         ++nbody_count;

@@ -29,7 +29,7 @@ int main_cpu() {
     allocate_memory();
 
     // Initialise N-bodies data
-    initialise_data(nbodies);
+    initialise_data_aos(nbodies);
 
     if (I == 0) {
         // Start the visualiser
