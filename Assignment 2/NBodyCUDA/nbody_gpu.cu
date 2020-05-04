@@ -38,29 +38,50 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
 __global__ void parallelise_each_body(nbody_soa d_nbodies, float *d_activity_map, const unsigned int N, const unsigned int D) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < N) {
-        /* Force */
-        float2 sum = make_float2(0, 0);
+    // Each thread represents a body. `i < N` to avoid reading beyond allocated.
+    const float4 body = i < N
+        ? make_float4(d_nbodies.x[i], d_nbodies.y[i], d_nbodies.vx[i], d_nbodies.vy[i])
+        : make_float4(0, 0, 0, 0);
 
-        for (unsigned int j = 0; j < N; ++j) {
-            const float2 dist = make_float2(d_nbodies.x[j] - d_nbodies.x[i], d_nbodies.y[j] - d_nbodies.y[i]);
+    __shared__ float3 s_nbodies[THREADS_PER_BLOCK];
+
+    /* Force */
+    float2 sum = make_float2(0, 0);
+
+    // Shared memory - divide d_nbodies into sub-blocks
+    for (unsigned int sub_block = 0; sub_block < gridDim.x; ++sub_block) {
+        const unsigned int sub_i = sub_block * THREADS_PER_BLOCK + threadIdx.x;
+
+        // Load into shared memory. `sub_i < N` to avoid reading beyond allocated
+        s_nbodies[threadIdx.x] = sub_i < N
+            ? make_float3(d_nbodies.x[sub_i], d_nbodies.y[sub_i], d_nbodies.m[sub_i])
+            : make_float3(0, 0, 0);
+        __syncthreads();
+
+        // Iterating the sub-block. `sub_i < N` to avoid calculating "leftover" threads
+        for (unsigned int j = 0; sub_i < N && j < THREADS_PER_BLOCK; ++j) {
+            const float2 dist = make_float2(s_nbodies[j].x - body.x, s_nbodies[j].y - body.y);
             const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
-            const float m_div_mag = d_nbodies.m[j] * inv_dist * inv_dist * inv_dist;
+            const float m_div_mag = s_nbodies[j].z * inv_dist * inv_dist * inv_dist;
 
             sum.x += m_div_mag * dist.x;
             sum.y += m_div_mag * dist.y;
         }
 
+        __syncthreads();
+    }
+
+    if (i < N) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
-        d_nbodies.x[i] += dt * d_nbodies.vx[i];
-        d_nbodies.y[i] += dt * d_nbodies.vy[i];
+        d_nbodies.x[i] = body.x + dt * body.z;
+        d_nbodies.y[i] = body.y + dt * body.w;
 
-        // Calculate velocity vector, force and acceleration are computed together
-        d_nbodies.vx[i] += dt_MUL_G * sum.x;
-        d_nbodies.vy[i] += dt_MUL_G * sum.y;
+        // Calculate velocity vector
+        d_nbodies.vx[i] = body.z + dt_MUL_G * sum.x;
+        d_nbodies.vy[i] = body.w + dt_MUL_G * sum.y;
 
-        /* compute the position for a body in the `activity_map`
+        /* compute the position for `body` in the `activity_map`
          * and increase the corresponding body count */
         const unsigned int col = static_cast<unsigned int>(d_nbodies.x[i] * static_cast<float>(D));
         const unsigned int row = static_cast<unsigned int>(d_nbodies.y[i] * static_cast<float>(D));
