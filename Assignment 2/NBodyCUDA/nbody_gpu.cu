@@ -1,8 +1,6 @@
 #include <cstdio>
-#include <cmath>
-#include <device_launch_parameters.h>
 #include <cuda_runtime.h>
-#include <cuda_runtime_api.h>
+#include <device_launch_parameters.h>
 
 #include "NBody.h"
 #include "NBodyVisualiser.h"
@@ -41,16 +39,15 @@ __global__ void parallelise_each_body(nbody *d_nbodies, float *d_activity_map, c
 
     if (i < N) {
         /* Force */
-        float sum_x = 0, sum_y = 0;
+        float2 sum = make_float2(0, 0);
 
         for (unsigned int j = 0; j < N; ++j) {
-            const float dist_x = d_nbodies[j].x - d_nbodies[i].x;
-            const float dist_y = d_nbodies[j].y - d_nbodies[i].y;
-            const float mag_add_soft = dist_x * dist_x + dist_y * dist_y + SOFTENING_SQUARE;
-            const float m_div_soft = d_nbodies[j].m / (mag_add_soft * sqrtf(mag_add_soft));
+            const float2 dist = make_float2(d_nbodies[j].x - d_nbodies[i].x, d_nbodies[j].y - d_nbodies[i].y);
+            const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
+            const float m_div_mag = d_nbodies[j].m * inv_dist * inv_dist * inv_dist;
 
-            sum_x += m_div_soft * dist_x;
-            sum_y += m_div_soft * dist_y;
+            sum.x += m_div_mag * dist.x;
+            sum.y += m_div_mag * dist.y;
         }
 
         /* Movement */
@@ -59,8 +56,8 @@ __global__ void parallelise_each_body(nbody *d_nbodies, float *d_activity_map, c
         d_nbodies[i].y += dt * d_nbodies[i].vy;
 
         // Calculate velocity vector, force and acceleration are computed together
-        d_nbodies[i].vx += dt_MUL_G * sum_x;
-        d_nbodies[i].vy += dt_MUL_G * sum_y;
+        d_nbodies[i].vx += dt_MUL_G * sum.x;
+        d_nbodies[i].vy += dt_MUL_G * sum.y;
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
