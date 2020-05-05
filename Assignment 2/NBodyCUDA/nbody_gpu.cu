@@ -6,7 +6,7 @@
 #include "NBodyVisualiser.h"
 #include "nbody_data.h"
 
-#define THREADS_PER_BLOCK 32
+#define THREADS_PER_BLOCK 64
 
 // This will output the proper CUDA error strings in the event
 // that a CUDA host call returns an error
@@ -35,11 +35,19 @@ static void allocate_memory() noexcept;
 static void initialise_device() noexcept;
 static void check(cudaError_t err, char const *func, int line) noexcept;
 
+/**
+ * Kernel function to parallelise each body (N threads)
+ *
+ * @param d_nbodies      A Structure of Arrays (SoA) layout of n-bodies
+ * @param d_activity_map A device pointer to an activity map array
+ * @param N              Number of bodies
+ * @param D              Grid dimension
+ */
 __global__ void parallelise_each_body(nbody_soa d_nbodies, float *d_activity_map, const unsigned int N, const unsigned int D) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Each thread represents a body. `i < N` to avoid reading beyond allocated.
-    const float4 body = i < N
+    float4 body = i < N
         ? make_float4(d_nbodies.x[i], d_nbodies.y[i], d_nbodies.vx[i], d_nbodies.vy[i])
         : make_float4(0, 0, 0, 0);
 
@@ -71,6 +79,7 @@ __global__ void parallelise_each_body(nbody_soa d_nbodies, float *d_activity_map
         __syncthreads();
     }
 
+    // Prevent reading `d_nbodies` beyond allocated (Unavoidable divergent branch)
     if (i < N) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
@@ -93,14 +102,27 @@ __global__ void parallelise_each_body(nbody_soa d_nbodies, float *d_activity_map
     }
 }
 
+/**
+ * Kernel function to normalise the activity map
+ *
+ * @param d_activity_map     The activity map array stored in device.
+ * @param grid_size          D * D. Runtime constant calculated in `NBody.cu`.
+ * @param normalising_factor D / N. Runtime constant calculated in `NBody.cu`.
+ */
 __global__ void normalise_activity_map(float *d_activity_map, const unsigned int grid_size, const float normalising_factor) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
+    // Prevent reading `d_activity_map` beyond allocated (Unavoidable divergent branch)
     if (i < grid_size) {
         d_activity_map[i] *= normalising_factor;
     }
 }
 
+/**
+ * Entry point of program for CUDA mode
+ *
+ * @return int The program exit code
+ */
 int main_gpu() noexcept {
     // Allocate any host memory and device memory
     allocate_memory();
