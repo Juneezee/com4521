@@ -6,7 +6,7 @@
 #include "NBodyVisualiser.h"
 #include "nbody_data.h"
 
-#define THREADS_PER_BLOCK 64
+#define THREADS_PER_BLOCK 32
 
 // This will output the proper CUDA error strings in the event
 // that a CUDA host call returns an error
@@ -29,11 +29,37 @@ static float *h_activity_map, *d_activity_map;
 static dim3 nbodies_blocksPerGrid;
 static dim3 activity_map_blocksPerGrid;
 
+static float2 *force_sum;
+
 // Function declarations
 static void step_gpu() noexcept;
 static void allocate_memory() noexcept;
 static void initialise_device() noexcept;
 static void check(cudaError_t err, char const *func, int line) noexcept;
+
+__global__ void compute_force(float2 *force_sum, const nbody_soa d_nbodies, const unsigned int N, const float2 body, const unsigned int parentIdx) {
+    const unsigned int sub_i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ float3 s_nbodies[THREADS_PER_BLOCK];
+
+    s_nbodies[threadIdx.x] = sub_i < N
+        ? make_float3(d_nbodies.x[sub_i], d_nbodies.y[sub_i], d_nbodies.m[sub_i])
+        : make_float3(0, 0, 0);
+    __syncthreads();
+
+    if (sub_i < N) {
+        const float2 dist = make_float2(s_nbodies[threadIdx.x].x - body.x, s_nbodies[threadIdx.x].y - body.y);
+        const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
+        const float m_div_mag = s_nbodies[threadIdx.x].z * inv_dist * inv_dist * inv_dist;
+
+        //printf("%d\n", parentIdx);
+
+        //printf("%d: (%f, %f)\n", sub_i, local_sum.x, local_sum.y);
+        atomicAdd(&force_sum[parentIdx].x, m_div_mag * dist.x);
+        atomicAdd(&force_sum[parentIdx].y, m_div_mag * dist.y);    
+    }    
+    __syncthreads();
+}
 
 /**
  * Kernel function to parallelise each body (N threads)
@@ -43,52 +69,66 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
  * @param N              Number of bodies
  * @param D              Grid dimension
  */
-__global__ void parallelise_each_body(nbody_soa d_nbodies, float *d_activity_map, const unsigned int N, const unsigned int D) {
+__global__ void parallelise_each_body(nbody_soa d_nbodies, float *d_activity_map, const unsigned int N, const unsigned int D, float2 *force_sum) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Each thread represents a body. `i < N` to avoid reading beyond allocated.
-    float4 body = i < N
+    const float4 body = i < N
         ? make_float4(d_nbodies.x[i], d_nbodies.y[i], d_nbodies.vx[i], d_nbodies.vy[i])
         : make_float4(0, 0, 0, 0);
 
-    __shared__ float3 s_nbodies[THREADS_PER_BLOCK];
+    //__shared__ float3 s_nbodies[THREADS_PER_BLOCK];
 
-    /* Force */
-    float2 sum = make_float2(0, 0);
+    ///* Force */
+    //float2 sum = make_float2(0, 0);
 
-    // Shared memory - divide d_nbodies into sub-blocks
-    for (unsigned int sub_block = 0; sub_block < gridDim.x; ++sub_block) {
-        const unsigned int sub_i = sub_block * THREADS_PER_BLOCK + threadIdx.x;
+    //// Shared memory - divide d_nbodies into sub-blocks
+    //for (unsigned int sub_block = 0; sub_block < gridDim.x; ++sub_block) {
+    //    const unsigned int sub_i = sub_block * THREADS_PER_BLOCK + threadIdx.x;
 
-        // Load into shared memory. `sub_i < N` to avoid reading beyond allocated
-        s_nbodies[threadIdx.x] = sub_i < N
-            ? make_float3(d_nbodies.x[sub_i], d_nbodies.y[sub_i], d_nbodies.m[sub_i])
-            : make_float3(0, 0, 0);
-        __syncthreads();
+    //    // Load into shared memory. `sub_i < N` to avoid reading beyond allocated
+    //    s_nbodies[threadIdx.x] = sub_i < N
+    //        ? make_float3(d_nbodies.x[sub_i], d_nbodies.y[sub_i], d_nbodies.m[sub_i])
+    //        : make_float3(0, 0, 0);
+    //    __syncthreads();
 
-        // Iterating the sub-block. `sub_i < N` to avoid calculating "leftover" threads
-        for (unsigned int j = 0; sub_i < N && j < THREADS_PER_BLOCK; ++j) {
-            const float2 dist = make_float2(s_nbodies[j].x - body.x, s_nbodies[j].y - body.y);
-            const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
-            const float m_div_mag = s_nbodies[j].z * inv_dist * inv_dist * inv_dist;
+    //    // Iterating the sub-block. `sub_i < N` to avoid calculating "leftover" threads
+    //    for (unsigned int j = 0; sub_i < N && j < THREADS_PER_BLOCK; ++j) {
+    //        const float2 dist = make_float2(s_nbodies[j].x - body.x, s_nbodies[j].y - body.y);
+    //        const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
+    //        const float m_div_mag = s_nbodies[j].z * inv_dist * inv_dist * inv_dist;
 
-            sum.x += m_div_mag * dist.x;
-            sum.y += m_div_mag * dist.y;
-        }
+    //        sum.x += m_div_mag * dist.x;
+    //        sum.y += m_div_mag * dist.y;
+    //    }
 
-        __syncthreads();
-    }
+    //    __syncthreads();
+    //}
 
     // Prevent reading `d_nbodies` beyond allocated (Unavoidable divergent branch)
     if (i < N) {
+        force_sum[i].x = 0;
+        force_sum[i].y = 0;
+        cudaStream_t s;
+        cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+        compute_force<<<gridDim.x, THREADS_PER_BLOCK, 0, s>>>(force_sum, d_nbodies, N, make_float2(body.x, body.y), i);
+
+        //_syncthreads();
+        if(threadIdx.x == 0) {
+          cudaDeviceSynchronize();
+        }
+        //__syncthreads();
+
+        //printf("%d: (%f, %f)\n", i, force_sum[i].x, force_sum[i].y);
+
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
         d_nbodies.x[i] = body.x + dt * body.z;
         d_nbodies.y[i] = body.y + dt * body.w;
 
         // Calculate velocity vector
-        d_nbodies.vx[i] = body.z + dt_MUL_G * sum.x;
-        d_nbodies.vy[i] = body.w + dt_MUL_G * sum.y;
+        d_nbodies.vx[i] = body.z + dt_MUL_G * force_sum[i].x;
+        d_nbodies.vy[i] = body.w + dt_MUL_G * force_sum[i].y;
 
         /* compute the position for `body` in the `activity_map`
          * and increase the corresponding body count */
@@ -183,7 +223,7 @@ static void step_gpu() noexcept {
     // Clear the activity map of previous step
     checkCudaError(cudaMemset(d_activity_map, 0, activity_map_size));
 
-    parallelise_each_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_activity_map, N, D);
+    parallelise_each_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_activity_map, N, D, force_sum);
     normalise_activity_map << <activity_map_blocksPerGrid, THREADS_PER_BLOCK >> > (d_activity_map, grid_size, normalising_factor);
 }
 
@@ -212,6 +252,7 @@ static void allocate_memory() noexcept {
     checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.vy), size));
     checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.m), size));
     checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_activity_map), activity_map_size));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&force_sum), sizeof(float2) * N));
 }
 
 /**
