@@ -3,6 +3,7 @@
 
 #include "NBody.h"
 
-void initialise_data(nbody *);
+void initialise_data_aos(nbody *);
+void initialise_data_soa(nbody_soa *);
 
 #endif // NBODY_DATA_H

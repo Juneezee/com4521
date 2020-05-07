@@ -1,4 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -15,7 +14,9 @@ extern unsigned int D;
 extern MODE M;
 extern unsigned int I;
 
-static nbody *nbodies;
+static nbody_soa nbodies;
+static float *force_sum_x;
+static float *force_sum_y;
 static float *activity_map;
 
 // Function declarations
@@ -38,12 +39,12 @@ int main(const int argc, char *argv[]) {
     allocate_memory();
 
     // Initialise N-bodies data
-    initialise_data(nbodies);
+    initialise_data_soa(&nbodies);
 
     if (I == 0) {
         // Start the visualiser
         initViewer(N, D, M, &step);
-        setNBodyPositions(nbodies);
+        setNBodyPositions2f(nbodies.x, nbodies.y);
         setHistogramData(activity_map);
         startVisualisationLoop();
     } else {
@@ -63,7 +64,13 @@ int main(const int argc, char *argv[]) {
     }
 
     // Free memory
-    free(nbodies);
+    free(nbodies.x);
+    free(nbodies.y);
+    free(nbodies.vx);
+    free(nbodies.vy);
+    free(nbodies.m);
+    free(force_sum_x);
+    free(force_sum_y);
     free(activity_map);
 
     return 0;
@@ -73,49 +80,55 @@ int main(const int argc, char *argv[]) {
  * Perform the main simulation of the NBody system
  */
 static void step(void) {
-    int i;
+    int i, j;
 
     // Clear the previous step values
     const unsigned int grid_size = D * D;
     memset(activity_map, 0, grid_size * sizeof(float));
 
-#pragma omp parallel for schedule(static) default(none) shared(N, D, nbodies, activity_map) if (M == OPENMP)
+    /* Force */
+#pragma omp parallel for schedule(static) default(none) shared(N, nbodies, force_sum_x, force_sum_y) if (M == OPENMP)
     for (i = 0; i < (int)N; ++i) {
-        /* Force */
         float sum_x = 0, sum_y = 0;
 
-        for (unsigned int j = 0; j < N; ++j) {
-            const float dist_x = nbodies[j].x - nbodies[i].x;
-            const float dist_y = nbodies[j].y - nbodies[i].y;
+#pragma omp parallel for schedule(static) default(none) shared(N, nbodies) reduction(+: sum_x, sum_y) if (M == OPENMP)
+        for (j = 0; j < (int)N; ++j) {
+            const float dist_x = nbodies.x[j] - nbodies.x[i];
+            const float dist_y = nbodies.y[j] - nbodies.y[i];
             const float mag_add_soft = dist_x * dist_x + dist_y * dist_y + SOFTENING_SQUARE;
-            const float m_div_soft = nbodies[j].m / (mag_add_soft * sqrtf(mag_add_soft));
+            const float m_div_soft = nbodies.m[j] / (mag_add_soft * sqrtf(mag_add_soft));
 
             sum_x += m_div_soft * dist_x;
             sum_y += m_div_soft * dist_y;
         }
 
+        force_sum_x[i] = sum_x;
+        force_sum_y[i] = sum_y;
+    }
+
+#pragma omp parallel for schedule(static) default(none) shared(N, D, nbodies, activity_map) if (M == OPENMP)
+    for (i = 0; i < (int)N; ++i) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
-        nbodies[i].x += dt * nbodies[i].vx;
-        nbodies[i].y += dt * nbodies[i].vy;
+        nbodies.x[i] += dt * nbodies.vx[i];
+        nbodies.y[i] += dt * nbodies.vy[i];
 
         // Calculate velocity vector, force and acceleration are computed together
-        nbodies[i].vx += dt * G * sum_x;
-        nbodies[i].vy += dt * G * sum_y;
+        nbodies.vx[i] += dt * G * force_sum_x[i];
+        nbodies.vy[i] += dt * G * force_sum_y[i];
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
-        const unsigned int col = (unsigned int)(nbodies[i].x * (float)D);
-        const unsigned int row = (unsigned int)(nbodies[i].y * (float)D);
-        const unsigned int cell = (unsigned int)(D * row + col);
-
+        const unsigned int col = (unsigned int)(nbodies.x[i] * (float)D);
+        const unsigned int row = (unsigned int)(nbodies.y[i] * (float)D);
+        
         // Do not update `activity_map` if n-body is out of grid area
-        if (cell >= 0 && cell < grid_size) {
+        if (row < D && col < D) {
             if (M == OPENMP) {
 #pragma omp atomic
-                ++activity_map[cell];
+                ++activity_map[D * row + col];
             } else {
-                ++activity_map[cell];
+                ++activity_map[D * row + col];
             }
         }
     }
@@ -131,11 +144,15 @@ static void step(void) {
  * Allocate required memory
  */
 static void allocate_memory(void) {
-    nbodies = (nbody *)malloc(sizeof(nbody) * N);
-    if (nbodies == NULL) {
-        fprintf(stderr, "error: failed to allocate memory: nbodies\n");
-        exit(EXIT_FAILURE);
-    }
+    const size_t size = sizeof(float) * N;
+    nbodies.x = (float *)malloc(size);
+    nbodies.y = (float *)malloc(size);
+    nbodies.vx = (float *)malloc(size);
+    nbodies.vy = (float *)malloc(size);
+    nbodies.m = (float *)malloc(size);
+
+    force_sum_x = (float *)malloc(size);
+    force_sum_y = (float *)malloc(size);
 
     activity_map = (float *)malloc(sizeof(float) * D * D);
     if (activity_map == NULL) {

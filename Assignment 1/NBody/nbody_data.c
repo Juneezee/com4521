@@ -1,7 +1,7 @@
-#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "nbody_data.h"
 
@@ -17,11 +17,12 @@
 extern unsigned int N;
 extern char *input_file;
 
-static void generate_random_data(nbody *);
-static void read_input_file(nbody *);
+static void store_initial_values_aos(nbody *, float, float, float, float, float);
+static void store_initial_values_soa(nbody_soa *, unsigned int, float, float, float, float, float);
+static void read_input_file_aos(nbody *);
+static void read_input_file_soa(nbody_soa *);
 static int read_line(FILE *, char[]);
-static void validate_commas(char[]);
-static void parse_initial_values(nbody *, char[]);
+static bool validate_commas(const char[]);
 static char *tokenise(char *);
 static float str_to_float(const char *);
 
@@ -29,37 +30,98 @@ static float str_to_float(const char *);
  * Depending on program arguments, either generate random data
  * or read initial data from file
  *
- * @param nbodies
+ * @param nbodies A pointer to N-bodies structure (Array of Structures)
  */
-void initialise_data(nbody *nbodies) {
+void initialise_data_aos(nbody *nbodies) {
     if (input_file == NULL) {
-        generate_random_data(nbodies);
+        // Generate random data for N-bodies (Array of Structures)
+        for (unsigned int i = 0; i < N; ++i) {
+            nbodies[i].x = DEFAULT_X;
+            nbodies[i].y = DEFAULT_Y;
+            nbodies[i].vx = DEFAULT_VX;
+            nbodies[i].vy = DEFAULT_VY;
+            nbodies[i].m = DEFAULT_M;
+        }
     } else {
-        read_input_file(nbodies);
+        read_input_file_aos(nbodies);
     }
 }
 
 /**
- * Generate random data for N-bodies
+ * Depending on program arguments, either generate random data
+ * or read initial data from file
  *
- * @param nbodies A pointer to an N-body structure
+ * @param nbodies A pointer to N-bodies structure (Structure of Arrays)
  */
-static void generate_random_data(nbody *nbodies) {
-    for (unsigned int i = 0; i < N; ++i) {
-        nbodies[i].x = DEFAULT_X;
-        nbodies[i].y = DEFAULT_Y;
-        nbodies[i].vx = DEFAULT_VX;
-        nbodies[i].vy = DEFAULT_VY;
-        nbodies[i].m = DEFAULT_M;
+void initialise_data_soa(nbody_soa *nbodies) {
+    if (input_file == NULL) {
+        // Generate random data for N-bodies (Structure of Arrays)
+        for (unsigned int i = 0; i < N; ++i) {
+            nbodies->x[i] = DEFAULT_X;
+            nbodies->y[i] = DEFAULT_Y;
+            nbodies->vx[i] = DEFAULT_VX;
+            nbodies->vy[i] = DEFAULT_VY;
+            nbodies->m[i] = DEFAULT_M;
+        }
+    } else {
+        read_input_file_soa(nbodies);
     }
+}
+
+/**
+ * Store the 5 initial values into the given nbody
+ *
+ * @param body A pointer to an N-body (Array of Structures)
+ * @param x The x value
+ * @param y The y value
+ * @param vx The vx value
+ * @param vy The vy value
+ * @param m The m value
+ */
+static void store_initial_values_aos(nbody *body,
+    const float x,
+    const float y,
+    const float vx,
+    const float vy,
+    const float m) {
+    body->x = x;
+    body->y = y;
+    body->vx = vx;
+    body->vy = vy;
+    body->m = m;
+}
+
+/**
+ * Store the 5 initial values into the given nbody
+ *
+ * @param body A pointer to an N-body structure (Structure of Arrays)
+ * @param index The index representing the n-body
+ * @param x The x value
+ * @param y The y value
+ * @param vx The vx value
+ * @param vy The vy value
+ * @param m The m value
+ */
+static void store_initial_values_soa(nbody_soa *body,
+    const unsigned int index,
+    const float x,
+    const float y,
+    const float vx,
+    const float vy,
+    const float m) {
+    body->x[index] = x;
+    body->y[index] = y;
+    body->vx[index] = vx;
+    body->vy[index] = vy;
+    body->m[index] = m;
 }
 
 /**
  * Read initial data from file
  *
- * @param nbodies A pointer to N-bodies structure
+ * @param nbodies A pointer to N-bodies structure (Array of Structures)
  */
-static void read_input_file(nbody *nbodies) {
+static void read_input_file_aos(nbody *nbodies) {
     FILE *f = fopen(input_file, "r");
 
     if (f == NULL) {
@@ -72,9 +134,72 @@ static void read_input_file(nbody *nbodies) {
     unsigned int nbody_count = 0;
 
     while (read_line(f, buffer)) {
-        if (nbody_count < N) {
-            validate_commas(buffer);
-            parse_initial_values(&nbodies[nbody_count], buffer);
+        if (nbody_count < N && validate_commas(buffer)) {
+            // Convert the 5 initial values in the line buffer to float and store in nbody
+            // `tokenise` maintains a static pointer to buffer, pass NULL to get the next token
+            const char *x_token = tokenise(buffer);
+            const char *y_token = tokenise(NULL);
+            const char *vx_token = tokenise(NULL);
+            const char *vy_token = tokenise(NULL);
+            const char *m_token = tokenise(NULL);
+
+            const float x = x_token == NULL ? DEFAULT_X : str_to_float(x_token);
+            const float y = y_token == NULL ? DEFAULT_Y : str_to_float(y_token);
+            const float vx = vx_token == NULL ? DEFAULT_VX : str_to_float(vx_token);
+            const float vy = vy_token == NULL ? DEFAULT_VY : str_to_float(vy_token);
+            const float m = m_token == NULL ? DEFAULT_M : str_to_float(m_token);
+
+            store_initial_values_aos((nbody *)nbodies, x, y, vx, vy, m);
+        }
+
+        ++nbody_count;
+    }
+
+    fclose(f);
+
+    // Throw error is N supplied != number of bodies in the input file
+    if (nbody_count != N) {
+        fprintf(stderr,
+            "error: argument N (%u) != the number of bodies in the input file (%u)",
+            N, nbody_count);
+        exit(EXIT_FAILURE);
+    }
+}
+
+/**
+ * Read initial data from file
+ *
+ * @param nbodies A pointer to N-bodies structure (Structure of Arrays)
+ */
+static void read_input_file_soa(nbody_soa *nbodies) {
+    FILE *f = fopen(input_file, "r");
+
+    if (f == NULL) {
+        fprintf(stderr, "error: failed to read file: %s\n", input_file);
+        exit(EXIT_FAILURE);
+    }
+
+    // One extra byte needed for null character
+    char buffer[BUFFER_SIZE + 1];
+    unsigned int nbody_count = 0;
+
+    while (read_line(f, buffer)) {
+        if (nbody_count < N && validate_commas(buffer)) {
+            // Convert the 5 initial values in the line buffer to float and store in nbody
+            // `tokenise` maintains a static pointer to buffer, pass NULL to get the next token
+            const char *x_token = tokenise(buffer);
+            const char *y_token = tokenise(NULL);
+            const char *vx_token = tokenise(NULL);
+            const char *vy_token = tokenise(NULL);
+            const char *m_token = tokenise(NULL);
+
+            const float x = x_token == NULL ? DEFAULT_X : str_to_float(x_token);
+            const float y = y_token == NULL ? DEFAULT_Y : str_to_float(y_token);
+            const float vx = vx_token == NULL ? DEFAULT_VX : str_to_float(vx_token);
+            const float vy = vy_token == NULL ? DEFAULT_VY : str_to_float(vy_token);
+            const float m = m_token == NULL ? DEFAULT_M : str_to_float(m_token);
+
+            store_initial_values_soa((nbody_soa *)nbodies, nbody_count, x, y, vx, vy, m);
         }
 
         ++nbody_count;
@@ -134,8 +259,9 @@ static int read_line(FILE *f, char buffer[]) {
  * Validate the line containing the initial values. It should only contain 4 commas.
  *
  * @param buffer The line buffer
+ * @return bool true if the comma count is exactly 4, otherwise exit with failure
  */
-static void validate_commas(char buffer[]) {
+static bool validate_commas(const char buffer[]) {
     unsigned int comma_count = 0;
 
     for (unsigned int i = 0; buffer[i]; ++i) {
@@ -146,28 +272,8 @@ static void validate_commas(char buffer[]) {
         fprintf(stderr, "error: incorrect number of commas at line: %s\n", buffer);
         exit(EXIT_FAILURE);
     }
-}
 
-/**
- * Convert the 5 initial values in the line buffer to float and store in nbody
- *
- * @param nb A pointer to an N-body structure
- * @param buffer The line buffer
- */
-static void parse_initial_values(nbody *nb, char buffer[]) {
-    const char *x_token = tokenise(buffer);
-
-    // `tokenise` maintains a static pointer to buffer, pass NULL to get the next token
-    const char *y_token = tokenise(NULL);
-    const char *vx_token = tokenise(NULL);
-    const char *vy_token = tokenise(NULL);
-    const char *m_token = tokenise(NULL);
-
-    nb->x = x_token == NULL ? DEFAULT_X : str_to_float(x_token);
-    nb->y = y_token == NULL ? DEFAULT_Y : str_to_float(y_token);
-    nb->vx = vx_token == NULL ? DEFAULT_VX : str_to_float(vx_token);
-    nb->vy = vy_token == NULL ? DEFAULT_VY : str_to_float(vy_token);
-    nb->m = m_token == NULL ? DEFAULT_M : str_to_float(m_token);
+    return true;
 }
 
 /**
