@@ -7,7 +7,7 @@
 #include "NBodyVisualiser.h"
 #include "nbody_data.h"
 
-#define THREADS_PER_BLOCK 32
+#define THREADS_PER_BLOCK 256
 
 // This will output the proper CUDA error strings in the event
 // that a CUDA host call returns an error
