@@ -31,6 +31,11 @@ static nbody *h_nbodies, *d_nbodies;
 static float2 *d_force_sum;
 static float *d_activity_map;
 
+static __constant__ unsigned int c_N;
+static __constant__ unsigned int c_D;
+static __constant__ unsigned int c_grid_size;
+static __constant__ float c_normalising_factor;
+
 // Function declarations
 static void step_gpu() noexcept;
 static void allocate_memory() noexcept;
@@ -42,16 +47,15 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
  *
  * @param d_nbodies   A device pointer to an n-bodies array (Array of Structures)
  * @param d_force_sum A device pointer to the force summation result of each n-body
- * @param N           Number of n-bodies
  */
-__global__ void compute_force(nbody *d_nbodies, float2 *d_force_sum, const unsigned int N) {
+__global__ void compute_force(nbody *d_nbodies, float2 *d_force_sum) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < N) {
+    if (i < c_N) {
         float2 local_sum = make_float2(0, 0);
 
         // Summation of forces for the current n-body
-        for (unsigned int j = 0; j < N; ++j) {
+        for (unsigned int j = 0; j < c_N; ++j) {
             const float2 dist = make_float2(d_nbodies[j].x - d_nbodies[i].x, d_nbodies[j].y - d_nbodies[i].y);
             const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
             const float m_div_mag = d_nbodies[j].m * inv_dist * inv_dist * inv_dist;
@@ -72,10 +76,10 @@ __global__ void compute_force(nbody *d_nbodies, float2 *d_force_sum, const unsig
  * @param d_force_sum    A device pointer to the force summation result of each n-body
  * @param d_activity_map A device pointer to an activity map array
  */
-__global__ void update_body(nbody *d_nbodies, float2 *d_force_sum, float *d_activity_map, const unsigned int N, const unsigned int D) {
+__global__ void update_body(nbody *d_nbodies, float2 *d_force_sum, float *d_activity_map) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < N) {
+    if (i < c_N) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
         d_nbodies[i].x += dt * d_nbodies[i].vx;
@@ -87,12 +91,12 @@ __global__ void update_body(nbody *d_nbodies, float2 *d_force_sum, float *d_acti
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
-        const unsigned int col = static_cast<unsigned int>(d_nbodies[i].x * static_cast<float>(D));
-        const unsigned int row = static_cast<unsigned int>(d_nbodies[i].y * static_cast<float>(D));
+        const unsigned int col = static_cast<unsigned int>(d_nbodies[i].x * static_cast<float>(c_D));
+        const unsigned int row = static_cast<unsigned int>(d_nbodies[i].y * static_cast<float>(c_D));
 
         // Do not update `activity_map` if n-body is out of grid area
-        if (row < D && col < D) {
-            atomicAdd(&d_activity_map[D * row + col], 1);
+        if (row < c_D && col < c_D) {
+            atomicAdd(&d_activity_map[c_D * row + col], 1);
         }
     }
 }
@@ -102,12 +106,12 @@ __global__ void update_body(nbody *d_nbodies, float2 *d_force_sum, float *d_acti
  *
  * @param d_activity_map A device pointer to an activity map array
  */
-__global__ void normalise_activity_map(float *d_activity_map, const unsigned int grid_size, const float normalising_factor) {
+__global__ void normalise_activity_map(float *d_activity_map) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Prevent reading `d_activity_map` beyond allocated (Unavoidable divergent branch)
-    if (i < grid_size) {
-        d_activity_map[i] *= normalising_factor;
+    if (i < c_grid_size) {
+        d_activity_map[i] *= c_normalising_factor;
     }
 }
 
@@ -170,9 +174,9 @@ static void step_gpu() noexcept {
     // Clear the activity map of previous step
     checkCudaError(cudaMemset(d_activity_map, 0, activity_map_size));
 
-    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_force_sum, N);
-    update_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_force_sum, d_activity_map, N, D);
-    normalise_activity_map << <activity_map_blocksPerGrid, THREADS_PER_BLOCK >> > (d_activity_map, grid_size, normalising_factor);
+    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_force_sum);
+    update_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_force_sum, d_activity_map);
+    normalise_activity_map << <activity_map_blocksPerGrid, THREADS_PER_BLOCK >> > (d_activity_map);
 }
 
 /**
@@ -198,6 +202,12 @@ static void allocate_memory() noexcept {
 static void initialise_device() noexcept {
     // Copy host data to device
     checkCudaError(cudaMemcpy(d_nbodies, h_nbodies, nbodies_aos_size, cudaMemcpyHostToDevice));
+
+    // Copy runtime constants into constant memory
+    cudaMemcpyToSymbol(c_N, &N, sizeof N);
+    cudaMemcpyToSymbol(c_D, &D, sizeof D);
+    cudaMemcpyToSymbol(c_grid_size, &grid_size, sizeof grid_size);
+    cudaMemcpyToSymbol(c_normalising_factor, &normalising_factor, sizeof normalising_factor);
 
     // Calculate the required blocks
     nbodies_blocksPerGrid = { (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, 1, 1 };
