@@ -1,5 +1,4 @@
 #include <cstdio>
-#include <cmath>
 #include <device_launch_parameters.h>
 #include <cuda_runtime.h>
 
@@ -54,11 +53,11 @@ __global__ void compute_force(nbody *d_nbodies, float2 *d_force_sum, const unsig
         // Summation of forces for the current n-body
         for (unsigned int j = 0; j < N; ++j) {
             const float2 dist = make_float2(d_nbodies[j].x - d_nbodies[i].x, d_nbodies[j].y - d_nbodies[i].y);
-            const float mag_add_soft = dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE;
-            const float m_div_soft = d_nbodies[j].m / (mag_add_soft * sqrtf(mag_add_soft));
+            const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
+            const float m_div_mag = d_nbodies[j].m * inv_dist * inv_dist * inv_dist;
 
-            local_sum.x += m_div_soft * dist.x;
-            local_sum.y += m_div_soft * dist.y;
+            local_sum.x += m_div_mag * dist.x;
+            local_sum.y += m_div_mag * dist.y;
         }
 
         d_force_sum[i] = local_sum;
