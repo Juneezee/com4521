@@ -48,7 +48,7 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
  * @param d_nbodies   A device pointer to an n-bodies array (Array of Structures)
  * @param d_force_sum A device pointer to the force summation result of each n-body
  */
-__global__ void compute_force(float2 *d_force_sum, nbody_soa d_nbodies) {
+__global__ void compute_force(float2 *d_force_sum, float *pos_x, float *pos_y, float *mass) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < c_N) {
@@ -56,9 +56,9 @@ __global__ void compute_force(float2 *d_force_sum, nbody_soa d_nbodies) {
 
         // Summation of forces for the current n-body
         for (unsigned int j = 0; j < c_N; ++j) {
-            const float2 dist = make_float2(d_nbodies.x[j] - d_nbodies.x[i], d_nbodies.y[j] - d_nbodies.y[i]);
+            const float2 dist = make_float2(pos_x[j] - pos_x[i], pos_y[j] - pos_y[i]);
             const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
-            const float m_div_mag = d_nbodies.m[j] * inv_dist * inv_dist * inv_dist;
+            const float m_div_mag = mass[j] * inv_dist * inv_dist * inv_dist;
 
             local_sum.x += m_div_mag * dist.x;
             local_sum.y += m_div_mag * dist.y;
@@ -182,7 +182,7 @@ static void step_gpu() noexcept {
     // Clear the activity map of previous step
     checkCudaError(cudaMemset(d_activity_map, 0, activity_map_size));
 
-    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_force_sum, d_nbodies);
+    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_force_sum, d_nbodies.x, d_nbodies.y, d_nbodies.m);
     update_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_force_sum, d_activity_map);
     normalise_activity_map << <activity_map_blocksPerGrid, THREADS_PER_BLOCK >> > (d_activity_map);
 }
