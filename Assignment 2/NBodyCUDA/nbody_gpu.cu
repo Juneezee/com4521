@@ -51,7 +51,7 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
  * @param d_nbodies   A device pointer to an n-bodies array (Array of Structures)
  * @param d_force_sum A device pointer to the force summation result of each n-body
  */
-__global__ void compute_force(float2 *d_force_sum, nbody_soa *d_nbodies) {
+__global__ void compute_force(float2 *d_force_sum, nbody_soa const *__restrict__ d_nbodies) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < c_N) {
