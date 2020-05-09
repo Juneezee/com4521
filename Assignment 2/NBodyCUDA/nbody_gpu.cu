@@ -45,13 +45,15 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
 /**
  * Compute the summation of forces for each n-body
  *
- * @param d_nbodies   A device pointer to an n-bodies array (Array of Structures)
+ * @param x           A device pointer to a float array of length N containing the x position of bodies
+ * @param y           A device pointer to a float array of length N containing the y position of bodies
+ * @param m           A device pointer to a float array of length N containing the mass of bodies
  * @param d_force_sum A device pointer to the force summation result of each n-body
  */
-__global__ void compute_force(float2 *d_force_sum,
-                              const float *__restrict__ pos_x,
-                              const float *__restrict__ pos_y,
-                              const float *__restrict__ mass) {
+__global__ void compute_force(const float *__restrict__ x,
+                              const float *__restrict__ y,
+                              const float *__restrict__ m,
+                              float2 *__restrict__ d_force_sum) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < c_N) {
@@ -59,9 +61,9 @@ __global__ void compute_force(float2 *d_force_sum,
 
         // Summation of forces for the current n-body
         for (unsigned int j = 0; j < c_N; ++j) {
-            const float2 dist = make_float2(pos_x[j] - pos_x[i], pos_y[j] - pos_y[i]);
+            const float2 dist = make_float2(x[j] - x[i], y[j] - y[i]);
             const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
-            const float m_div_mag = mass[j] * inv_dist * inv_dist * inv_dist;
+            const float m_div_mag = m[j] * inv_dist * inv_dist * inv_dist;
 
             local_sum.x += m_div_mag * dist.x;
             local_sum.y += m_div_mag * dist.y;
@@ -75,27 +77,35 @@ __global__ void compute_force(float2 *d_force_sum,
  * Update the position and velocity of each n-body.
  * Also increase the count of each cell in activity map
  *
- * @param d_nbodies      A device pointer to an n-bodies array (Array of Structures)
+ * @param x              A device pointer to a float array of length N containing the x position of bodies
+ * @param y              A device pointer to a float array of length N containing the y position of bodies
+ * @param vx             A device pointer to a float array of length N containing the x velocity of bodies
+ * @param vy             A device pointer to a float array of length N containing the y velocity of bodies
  * @param d_force_sum    A device pointer to the force summation result of each n-body
  * @param d_activity_map A device pointer to an activity map array
  */
-__global__ void update_body(nbody_soa d_nbodies, float2 *d_force_sum, float *d_activity_map) {
+__global__ void update_body(float *__restrict__ x,
+                            float *__restrict__ y,
+                            float *__restrict__ vx,
+                            float *__restrict__ vy,
+                            const float2 *__restrict__ d_force_sum,
+                            float *__restrict__ d_activity_map) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < c_N) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
-        d_nbodies.x[i] += dt * d_nbodies.vx[i];
-        d_nbodies.y[i] += dt * d_nbodies.vy[i];
+        x[i] += dt * vx[i];
+        y[i] += dt * vy[i];
 
         // Calculate velocity vector, force and acceleration are computed together
-        d_nbodies.vx[i] += dt_MUL_G * d_force_sum[i].x;
-        d_nbodies.vy[i] += dt_MUL_G * d_force_sum[i].y;
+        vx[i] += dt_MUL_G * d_force_sum[i].x;
+        vy[i] += dt_MUL_G * d_force_sum[i].y;
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
-        const unsigned int col = static_cast<unsigned int>(d_nbodies.x[i] * static_cast<float>(c_D));
-        const unsigned int row = static_cast<unsigned int>(d_nbodies.y[i] * static_cast<float>(c_D));
+        const unsigned int col = static_cast<unsigned int>(x[i] * static_cast<float>(c_D));
+        const unsigned int row = static_cast<unsigned int>(y[i] * static_cast<float>(c_D));
 
         // Do not update `activity_map` if n-body is out of grid area
         if (row < c_D && col < c_D) {
@@ -109,7 +119,7 @@ __global__ void update_body(nbody_soa d_nbodies, float2 *d_force_sum, float *d_a
  *
  * @param d_activity_map A device pointer to an activity map array
  */
-__global__ void normalise_activity_map(float *d_activity_map) {
+__global__ void normalise_activity_map(float *__restrict__ d_activity_map) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Prevent reading `d_activity_map` beyond allocated (Unavoidable divergent branch)
@@ -185,8 +195,16 @@ static void step_gpu() noexcept {
     // Clear the activity map of previous step
     checkCudaError(cudaMemset(d_activity_map, 0, activity_map_size));
 
-    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> >(d_force_sum, d_nbodies.x, d_nbodies.y, d_nbodies.m);
-    update_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> >(d_nbodies, d_force_sum, d_activity_map);
+    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> >(d_nbodies.x,
+                                                                    d_nbodies.y,
+                                                                    d_nbodies.m,
+                                                                    d_force_sum);
+    update_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> >(d_nbodies.x,
+                                                                  d_nbodies.y,
+                                                                  d_nbodies.vx,
+                                                                  d_nbodies.vy,
+                                                                  d_force_sum,
+                                                                  d_activity_map);
     normalise_activity_map << <activity_map_blocksPerGrid, THREADS_PER_BLOCK >> >(d_activity_map);
 }
 
