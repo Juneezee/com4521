@@ -56,21 +56,37 @@ __global__ void compute_force(const float *__restrict__ x,
                               float2 *__restrict__ d_force_sum) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < c_N) {
-        float2 local_sum = make_float2(0, 0);
+    __shared__ float3 s_nbodies[THREADS_PER_BLOCK];
+
+    float2 local_sum = make_float2(0, 0);
+
+    // Divide N bodies into sub-blocks
+    for (unsigned int sub_block = 0; sub_block < gridDim.x; ++sub_block) {
+        const unsigned int sub_i = sub_block * THREADS_PER_BLOCK + threadIdx.x;
+
+        // Load data into shared memory. `sub_i < c_N` to avoid reading beyond allocated
+        s_nbodies[threadIdx.x] = sub_i < c_N
+                                     ? make_float3(x[sub_i], y[sub_i], m[sub_i])
+                                     : make_float3(0, 0, 0);
+        __syncthreads();
 
         // Summation of forces for the current n-body
-        for (unsigned int j = 0; j < c_N; ++j) {
-            const float2 dist = make_float2(x[j] - x[i], y[j] - y[i]);
-            const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
-            const float m_div_mag = m[j] * inv_dist * inv_dist * inv_dist;
+        if (i < c_N) {
+            for (float3 &s_nbody : s_nbodies) {
+                const float2 dist = make_float2(s_nbody.x - x[i], s_nbody.y - y[i]);
+                const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
+                const float m_div_mag = s_nbody.z * inv_dist * inv_dist * inv_dist;
 
-            local_sum.x += m_div_mag * dist.x;
-            local_sum.y += m_div_mag * dist.y;
+                local_sum.x += m_div_mag * dist.x;
+                local_sum.y += m_div_mag * dist.y;
+            }
         }
 
-        d_force_sum[i] = local_sum;
+        __syncthreads();
     }
+
+    // Store the result to global memory
+    d_force_sum[i] = local_sum;
 }
 
 /**
