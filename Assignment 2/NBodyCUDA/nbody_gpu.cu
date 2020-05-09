@@ -27,9 +27,12 @@ extern size_t activity_map_size;
 static dim3 nbodies_blocksPerGrid;
 static dim3 activity_map_blocksPerGrid;
 
-static nbody_soa h_nbodies, d_nbodies;
+static nbody_soa h_nbodies, *d_nbodies;
 static float2 *d_force_sum;
 static float *d_activity_map;
+
+// These pointers are required for (nbody_soa *) to work
+float *d_x, *d_y, *d_vx, *d_vy, *d_m;
 
 static __constant__ unsigned int c_N;
 static __constant__ unsigned int c_D;
@@ -48,7 +51,7 @@ static void check(cudaError_t err, char const *func, int line) noexcept;
  * @param d_nbodies   A device pointer to an n-bodies array (Array of Structures)
  * @param d_force_sum A device pointer to the force summation result of each n-body
  */
-__global__ void compute_force(float2 *d_force_sum, float *pos_x, float *pos_y, float *mass) {
+__global__ void compute_force(float2 *d_force_sum, nbody_soa *d_nbodies) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < c_N) {
@@ -56,9 +59,9 @@ __global__ void compute_force(float2 *d_force_sum, float *pos_x, float *pos_y, f
 
         // Summation of forces for the current n-body
         for (unsigned int j = 0; j < c_N; ++j) {
-            const float2 dist = make_float2(pos_x[j] - pos_x[i], pos_y[j] - pos_y[i]);
+            const float2 dist = make_float2(d_nbodies->x[j] - d_nbodies->x[i], d_nbodies->y[j] - d_nbodies->y[i]);
             const float inv_dist = rsqrtf(dist.x * dist.x + dist.y * dist.y + SOFTENING_SQUARE);
-            const float m_div_mag = mass[j] * inv_dist * inv_dist * inv_dist;
+            const float m_div_mag = d_nbodies->m[j] * inv_dist * inv_dist * inv_dist;
 
             local_sum.x += m_div_mag * dist.x;
             local_sum.y += m_div_mag * dist.y;
@@ -76,23 +79,23 @@ __global__ void compute_force(float2 *d_force_sum, float *pos_x, float *pos_y, f
  * @param d_force_sum    A device pointer to the force summation result of each n-body
  * @param d_activity_map A device pointer to an activity map array
  */
-__global__ void update_body(nbody_soa d_nbodies, float2 *d_force_sum, float *d_activity_map) {
+__global__ void update_body(nbody_soa *d_nbodies, float2 *d_force_sum, float *d_activity_map) {
     const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < c_N) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
-        d_nbodies.x[i] += dt * d_nbodies.vx[i];
-        d_nbodies.y[i] += dt * d_nbodies.vy[i];
+        d_nbodies->x[i] += dt * d_nbodies->vx[i];
+        d_nbodies->y[i] += dt * d_nbodies->vy[i];
 
         // Calculate velocity vector, force and acceleration are computed together
-        d_nbodies.vx[i] += dt_MUL_G * d_force_sum[i].x;
-        d_nbodies.vy[i] += dt_MUL_G * d_force_sum[i].y;
+        d_nbodies->vx[i] += dt_MUL_G * d_force_sum[i].x;
+        d_nbodies->vy[i] += dt_MUL_G * d_force_sum[i].y;
 
         /* compute the position for a body in the `activity_map`
          * and increase the corresponding body count */
-        const unsigned int col = static_cast<unsigned int>(d_nbodies.x[i] * static_cast<float>(c_D));
-        const unsigned int row = static_cast<unsigned int>(d_nbodies.y[i] * static_cast<float>(c_D));
+        const unsigned int col = static_cast<unsigned int>(d_nbodies->x[i] * static_cast<float>(c_D));
+        const unsigned int row = static_cast<unsigned int>(d_nbodies->y[i] * static_cast<float>(c_D));
 
         // Do not update `activity_map` if n-body is out of grid area
         if (row < c_D && col < c_D) {
@@ -130,7 +133,7 @@ int main_gpu() noexcept {
 
     if (I == 0) {
         initViewer(N, D, CUDA, &step_gpu);
-        setNBodyPositions2f(d_nbodies.x, d_nbodies.y);
+        setNBodyPositions2f(d_x, d_y);
         setActivityMapData(d_activity_map);
         startVisualisationLoop();
     } else {
@@ -163,11 +166,12 @@ int main_gpu() noexcept {
     free(h_nbodies.m);
 
     // Free device memory
-    checkCudaError(cudaFree(d_nbodies.x));
-    checkCudaError(cudaFree(d_nbodies.y));
-    checkCudaError(cudaFree(d_nbodies.vx));
-    checkCudaError(cudaFree(d_nbodies.vy));
-    checkCudaError(cudaFree(d_nbodies.m));
+    checkCudaError(cudaFree(d_x));
+    checkCudaError(cudaFree(d_y));
+    checkCudaError(cudaFree(d_vx));
+    checkCudaError(cudaFree(d_vy));
+    checkCudaError(cudaFree(d_m));
+    checkCudaError(cudaFree(d_nbodies));
     checkCudaError(cudaFree(d_activity_map));
     checkCudaError(cudaFree(d_force_sum));
     checkCudaError(cudaDeviceReset());
@@ -182,7 +186,7 @@ static void step_gpu() noexcept {
     // Clear the activity map of previous step
     checkCudaError(cudaMemset(d_activity_map, 0, activity_map_size));
 
-    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_force_sum, d_nbodies.x, d_nbodies.y, d_nbodies.m);
+    compute_force << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_force_sum, d_nbodies);
     update_body << <nbodies_blocksPerGrid, THREADS_PER_BLOCK >> > (d_nbodies, d_force_sum, d_activity_map);
     normalise_activity_map << <activity_map_blocksPerGrid, THREADS_PER_BLOCK >> > (d_activity_map);
 }
@@ -199,11 +203,12 @@ static void allocate_memory() noexcept {
     h_nbodies.m = static_cast<float *>(malloc(nbodies_soa_size));
 
     // Device memory
-    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.x), nbodies_soa_size));
-    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.y), nbodies_soa_size));
-    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.vx), nbodies_soa_size));
-    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.vy), nbodies_soa_size));
-    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies.m), nbodies_soa_size));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_nbodies), sizeof(nbody_soa)));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_x), nbodies_soa_size));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_y), nbodies_soa_size));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_vx), nbodies_soa_size));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_vy), nbodies_soa_size));
+    checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_m), nbodies_soa_size));
     checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_activity_map), activity_map_size));
     checkCudaError(cudaMalloc(reinterpret_cast<void **>(&d_force_sum), sizeof(float2) * N));
 }
@@ -212,12 +217,20 @@ static void allocate_memory() noexcept {
  * Initialise the device with required values
  */
 static void initialise_device() noexcept {
-    // Copy host data to device
-    checkCudaError(cudaMemcpy(d_nbodies.x, h_nbodies.x, nbodies_soa_size, cudaMemcpyHostToDevice));
-    checkCudaError(cudaMemcpy(d_nbodies.y, h_nbodies.y, nbodies_soa_size, cudaMemcpyHostToDevice));
-    checkCudaError(cudaMemcpy(d_nbodies.vx, h_nbodies.vx, nbodies_soa_size, cudaMemcpyHostToDevice));
-    checkCudaError(cudaMemcpy(d_nbodies.vy, h_nbodies.vy, nbodies_soa_size, cudaMemcpyHostToDevice));
-    checkCudaError(cudaMemcpy(d_nbodies.m, h_nbodies.m, nbodies_soa_size, cudaMemcpyHostToDevice));
+    // Copy host data to individual pointers first
+    checkCudaError(cudaMemcpy(d_x, h_nbodies.x, nbodies_soa_size, cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(d_y, h_nbodies.y, nbodies_soa_size, cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(d_vx, h_nbodies.vx, nbodies_soa_size, cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(d_vy, h_nbodies.vy, nbodies_soa_size, cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(d_m, h_nbodies.m, nbodies_soa_size, cudaMemcpyHostToDevice));
+
+    // Copy individual pointers to SoA pointer
+    checkCudaError(cudaMemcpy(d_nbodies, &h_nbodies, sizeof(nbody_soa), cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(&d_nbodies->x, &d_x, sizeof(float *), cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(&d_nbodies->y, &d_y, sizeof(float *), cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(&d_nbodies->vx, &d_vx, sizeof(float *), cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(&d_nbodies->vy, &d_vy, sizeof(float *), cudaMemcpyHostToDevice));
+    checkCudaError(cudaMemcpy(&d_nbodies->m, &d_m, sizeof(float *), cudaMemcpyHostToDevice));
 
     // Copy runtime constants into constant memory
     cudaMemcpyToSymbol(c_N, &N, sizeof N);
