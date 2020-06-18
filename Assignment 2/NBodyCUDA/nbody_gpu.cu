@@ -86,7 +86,9 @@ __global__ void compute_force(const float *__restrict__ x,
     }
 
     // Store the result to global memory
-    d_force_sum[i] = local_sum;
+    if (i < c_N) {
+        d_force_sum[i] = local_sum;
+    }
 }
 
 /**
