@@ -82,11 +82,11 @@ static void step_cpu() noexcept {
     memset(activity_map, 0, activity_map_size);
 
     /* Force */
-#pragma omp parallel for schedule(static) default(none) shared(N, nbodies, force_sum_x, force_sum_y) if (M == OPENMP)
+#pragma omp parallel for schedule(static) default(none) private(i) shared(N, nbodies, force_sum_x, force_sum_y) if (M == OPENMP)
     for (i = 0; i < static_cast<int>(N); ++i) {
         float sum_x = 0, sum_y = 0;
 
-#pragma omp parallel for schedule(static) default(none) shared(N, nbodies) reduction(+: sum_x, sum_y) if (M == OPENMP)
+#pragma omp parallel for schedule(static) default(none) private(j) shared(N, nbodies) reduction(+: sum_x, sum_y) if (M == OPENMP)
         for (j = 0; j < static_cast<int>(N); ++j) {
             const float dist_x = nbodies.x[j] - nbodies.x[i];
             const float dist_y = nbodies.y[j] - nbodies.y[i];
@@ -101,7 +101,7 @@ static void step_cpu() noexcept {
         force_sum_y[i] = sum_y;
     }
 
-#pragma omp parallel for schedule(static) default(none) shared(N, D, nbodies, activity_map) if (M == OPENMP)
+#pragma omp parallel for schedule(static) default(none) private(i) shared(N, D, nbodies, activity_map) if (M == OPENMP)
     for (i = 0; i < static_cast<int>(N); ++i) {
         /* Movement */
         // Calculate position vector, do this first as it depends on current velocity
